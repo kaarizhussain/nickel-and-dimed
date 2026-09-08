@@ -73,6 +73,11 @@ begin
   assert found, 'a real $31 -> $37 unit price step must be caught';
   assert f.basis = 'unit_price', format('basis should be unit_price, got %s', f.basis);
   assert f.pct_change = 19.4, format('pct_change should be 19.4, got %s', f.pct_change);
+  -- 3 observations a month and still elevated 3 months later: sustained, but the
+  -- month is thinner than the >= 4 observations "high" asks for. Medium is the
+  -- honest answer, and this is the assertion that proves the floor bites.
+  assert f.confidence = 'medium',
+    format('3 observations is sustained but thin -- expected medium, got %s', f.confidence);
   -- 9 units/month x 12 months of trailing history at this point, x $6.00 per unit
   assert f.annualized_impact = 324.00,
     format('annualized_impact should be 324.00, got %s', f.annualized_impact);
@@ -178,6 +183,10 @@ begin
     format('basis must declare the weaker evidence, got %s', f.basis);
   assert f.item = '(whole invoice)',
     format('unitless fallback should say so, got %s', f.item);
+  -- invoice averages cannot separate price from order size, so however clean the
+  -- numbers look this evidence is never better than low
+  assert f.confidence = 'low',
+    format('an invoice-average finding can never exceed low confidence, got %s', f.confidence);
   assert f.pct_change = 30.0, format('pct_change should be 30.0, got %s', f.pct_change);
 
   raise notice 'invoice-average fallback ok';

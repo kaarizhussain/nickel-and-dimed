@@ -12,13 +12,17 @@ year-over-year cost about 10%. This is that job, automated.
 
 Three years of spend, 1,193 invoices, 1,698 line items, six vendors.
 
-| Vendor | Item | Price move | When | Per year |
-|---|---|---|---|---|
-| Tony's Pizza | party pizza | $34.00 → $37.00 (+8.8%) | Mar 2024 | **$1,263** |
-| Party Time Balloons | balloon arch | $43.00 → $47.00 (+9.3%) | Dec 2023 | **$508** |
-| Roast House Coffee | whole bean 5lb | $50.06 → $58.43 (+16.7%) | Sep 2025 | **$419** |
+| Vendor | Item | Price move | When | Per year | Confidence |
+|---|---|---|---|---|---|
+| Tony's Pizza | party pizza | $34.00 → $37.00 (+8.8%) | Mar 2024 | **$1,263** | high — 13 obs, held 22 mo |
+| Party Time Balloons | balloon arch | $43.00 → $47.00 (+9.3%) | Dec 2023 | **$508** | high — 10 obs, held 25 mo |
+| Roast House Coffee | whole bean 5lb | $50.06 → $58.43 (+16.7%) | Sep 2025 | **$419** | medium — 2 obs, held 4 mo |
 
 **$2,190 a year**, none of it announced by anyone.
+
+Coffee comes back *medium* on purpose: it is a real increase, but it rests on two
+observations a month, so the alert says so rather than presenting it with the same
+weight as the other two.
 
 ### And what it deliberately did not find
 
@@ -55,6 +59,22 @@ per-unit increase multiplied by the item's actual trailing-12-month **quantity**
 **Vendors who don't itemize** are still analysed, on invoice averages. That basis
 cannot separate price from order size, so it is labelled as such on the alert
 rather than quietly mixed in with the stronger findings.
+
+**Confidence is derived, not asserted.** Every alert carries a grade computed from
+evidence already on the row, and shows the evidence next to it so the grade is
+checkable rather than something the app asks you to trust:
+
+| Signal | Question | Column |
+|---|---|---|
+| basis | Is it the right *kind* of evidence? | `basis` |
+| observations | Is there *enough* of it? | `observations` |
+| persistence | Did the increase *stick*? | `months_held` |
+
+A finding resting on invoice averages is capped at **low** no matter how clean the
+numbers look, because that evidence cannot answer the question being asked. A
+sustained increase on a thin month is **medium**. **High** needs four or more
+observations in the flagged month and the new level still standing three months
+later.
 
 ---
 

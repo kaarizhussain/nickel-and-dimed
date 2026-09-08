@@ -621,6 +621,14 @@ function App() {
                         </span>
                       )}
                     </div>
+                    {/* what the confidence rests on, so it is checkable rather
+                        than a label the app asks you to trust */}
+                    <div className="evidence">
+                      <span className={'conf ' + a.confidence}>{a.confidence}</span>
+                      <span className="faint small">
+                        {a.observations} observations &middot; held {a.months_held} mo
+                      </span>
+                    </div>
                     {/* period_end is the month the increase showed up. period_start is
                         the start of the baseline it is measured against, which is three
                         months earlier -- labelling that "since" reads as a much older

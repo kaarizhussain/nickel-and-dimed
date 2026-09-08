@@ -282,27 +282,64 @@ window
 --                      threshold belongs in it. Tuned to these vendors' volumes and
 --                      variance -- re-check against your own. The properly
 --                      statistical version scales by each item's own standard error.
+-- Confidence is derived from the evidence already on the row, not asserted. Three
+-- things make a price finding trustworthy, and each maps to a column:
+--
+--   basis         is it the right KIND of evidence? A finding resting on invoice
+--                 averages cannot separate a price rise from a bigger order, so it
+--                 is never better than low however clean the numbers look.
+--   observations  is there ENOUGH of it? Two is the floor to have an average at
+--                 all; four or more is a month you can lean on.
+--   months_held   did it STICK? A one-month spike is as easily a product-mix change
+--                 or a one-off as a repricing. An increase still standing months
+--                 later is a repricing.
 create or replace view price_flags as
-select vendor_id,
-       vendor_name,
-       item_key,
-       item,
-       basis,
-       (month - interval '3 months')::date as period_start,
-       month                               as period_end,
-       baseline_price,
-       avg_unit_price                      as current_price,
-       observations,
-       qty,
-       trailing_12mo_qty,
-       trailing_12mo_spend,
-       round((avg_unit_price - baseline_price) / baseline_price * 100, 1)          as pct_change,
-       round((avg_unit_price - prev_year_price) / nullif(prev_year_price, 0) * 100, 1) as pct_change_yoy,
-       round((avg_unit_price - baseline_price) * trailing_12mo_qty, 2)             as annualized_impact
-  from item_changes
- where baseline_price > 0
-   and observations >= 2
-   and (avg_unit_price - baseline_price) / baseline_price >= 0.08;
+with detected as (
+  select vendor_id,
+         vendor_name,
+         item_key,
+         item,
+         basis,
+         (month - interval '3 months')::date as period_start,
+         month                               as period_end,
+         baseline_price,
+         avg_unit_price                      as current_price,
+         observations,
+         qty,
+         trailing_12mo_qty,
+         trailing_12mo_spend,
+         round((avg_unit_price - baseline_price) / baseline_price * 100, 1)          as pct_change,
+         round((avg_unit_price - prev_year_price) / nullif(prev_year_price, 0) * 100, 1) as pct_change_yoy,
+         round((avg_unit_price - baseline_price) * trailing_12mo_qty, 2)             as annualized_impact
+    from item_changes
+   where baseline_price > 0
+     and observations >= 2
+     and (avg_unit_price - baseline_price) / baseline_price >= 0.08
+),
+held as (
+  -- months at or above 5% over the old baseline, from the flag month onward
+  -- ponytail: counts months at the level, not strictly consecutive ones. Prices
+  -- rarely fall back so the two agree in practice; make it a gaps-and-islands
+  -- query if a vendor ever oscillates across the threshold.
+  select d.vendor_id, d.item_key, d.period_end,
+         (select count(*) from item_monthly m
+           where m.vendor_id = d.vendor_id
+             and m.item_key  = d.item_key
+             and m.month    >= d.period_end
+             and m.avg_unit_price >= d.baseline_price * 1.05) as months_held
+    from detected d
+)
+select d.*,
+       h.months_held,
+       case
+         when d.basis = 'invoice_average'                         then 'low'
+         when d.observations >= 4 and h.months_held >= 3          then 'high'
+         when d.observations >= 2 and h.months_held >= 2          then 'medium'
+         else 'low'
+       end as confidence
+  from detected d
+  join held h
+    on h.vendor_id = d.vendor_id and h.item_key = d.item_key and h.period_end = d.period_end;
 
 -- What the dashboard reads: each vendor's worst current problem. A vendor is
 -- ranked by the item costing it the most per year, not by how many items moved.
