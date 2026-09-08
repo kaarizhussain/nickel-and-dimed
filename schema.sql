@@ -1,4 +1,4 @@
--- Ledger schema. Paste into the Supabase SQL editor, or: psql "$DATABASE_URL" -f schema.sql
+-- Nickel and Dimed schema. Paste into the Supabase SQL editor, or: psql "$DATABASE_URL" -f schema.sql
 --
 -- Two tables (vendors, invoices). price_flags is a VIEW, not a table: detection is
 -- derived from invoices, so there is no write path and it can never go stale.
@@ -46,7 +46,7 @@ create table if not exists invoices (
 create index if not exists invoices_vendor_date on invoices (vendor_id, invoice_date);
 
 -- No auth in v1, and the browser never talks to Supabase directly -- the Node API
--- holds the service_role key. RLS on with zero policies means anon/authenticated
+-- holds the secret key. RLS on with zero policies means anon/authenticated
 -- get nothing even if the URL and anon key leak.
 alter table vendors  enable row level security;
 alter table invoices enable row level security;

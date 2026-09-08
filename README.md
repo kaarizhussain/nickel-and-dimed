@@ -1,4 +1,4 @@
-# Ledger
+# Nickel and Dimed
 
 Hand it a messy vendor spend export. Within a minute it tells you which vendor is
 quietly costing you the most, and what that adds up to over a year.

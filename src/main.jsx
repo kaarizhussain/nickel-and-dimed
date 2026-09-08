@@ -87,7 +87,7 @@ function App() {
   return (
     <main>
       <header>
-        <h1>Ledger</h1>
+        <h1>Nickel and Dimed</h1>
         <p className="muted">Vendor spend, and which vendors are quietly creeping up.</p>
       </header>
 

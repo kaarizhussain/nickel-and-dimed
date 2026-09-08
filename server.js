@@ -1,4 +1,4 @@
-// Ledger API. Node 20+ (built-in fetch, --env-file).
+// Nickel and Dimed API. Node 20+ (built-in fetch, --env-file).
 //   npm run api
 import http from 'node:http';
 import Anthropic from '@anthropic-ai/sdk';
@@ -155,4 +155,4 @@ http
       send(500, { error: e.message ?? String(e) });
     }
   })
-  .listen(3001, () => console.log('ledger api on http://localhost:3001'));
+  .listen(3001, () => console.log('nickel-and-dimed api on http://localhost:3001'));
