@@ -20,13 +20,24 @@
         --alarm:    #b91c1c;
         --alarm-bg: #fee2e2;
         --radius:   10px;
+
+        /* Seven steps, not eleven ad-hoc sizes. Every font-size below is one of
+           these. 13px and 14px were doing the same job in different places, and
+           24/26 were two sizes for one role. */
+        --t-xs:    11px;   /* eyebrows, badges, axis ticks */
+        --t-sm:    12px;   /* meta and secondary detail */
+        --t-base:  14px;   /* body, controls */
+        --t-md:    16px;   /* emphasis: vendor names, prose, drawer titles */
+        --t-lg:    20px;   /* secondary figures, page title */
+        --t-xl:    28px;   /* per-finding impact */
+        --t-hero:  44px;   /* the one number the product exists to produce */
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--ink);
-        font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font: var(--t-base)/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
         -webkit-font-smoothing: antialiased;
       }
       main { max-width: 1040px; margin: 0 auto; padding: 56px 28px 96px; }
@@ -38,8 +49,8 @@
         gap: 20px; padding-bottom: 20px; margin-bottom: 28px;
         border-bottom: 1px solid var(--line);
       }
-      .topbar h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.015em; }
-      .topbar p { font-size: 13px; color: var(--muted); margin-top: 2px; }
+      .topbar h1 { font-size: var(--t-lg); font-weight: 600; letter-spacing: -0.015em; }
+      .topbar p { font-size: var(--t-base); color: var(--muted); margin-top: 2px; }
       .topbar-right { display: flex; align-items: center; gap: 14px; }
 
       /* --------------------------------------------------------------- kpis */
@@ -53,29 +64,16 @@
       }
       .kpi { background: var(--card); padding: 18px 20px; }
       .kpi-num {
-        font-size: 24px; font-weight: 600; letter-spacing: -0.02em;
+        font-size: var(--t-lg); font-weight: 600; letter-spacing: -0.02em;
         font-variant-numeric: tabular-nums;
       }
-      .kpi.lead .kpi-num { font-size: 44px; line-height: 1.05; letter-spacing: -0.03em; }
-      .kpi-label { font-size: 12px; color: var(--muted); margin-top: 5px; }
-      .kpi.lead .kpi-label { font-size: 13px; color: var(--ink-soft); margin-top: 8px; }
+      .kpi.lead .kpi-num { font-size: var(--t-hero); line-height: 1.05; letter-spacing: -0.03em; }
+      .kpi-label { font-size: var(--t-sm); color: var(--muted); margin-top: 5px; }
+      .kpi.lead .kpi-label { font-size: var(--t-base); color: var(--ink-soft); margin-top: 8px; }
       @media (max-width: 860px) {
         .kpis { grid-template-columns: 1fr 1fr; }
       }
 
-      /* The headline number. This is the entire product in one figure, so it gets
-         the weight -- everything else on the page is supporting evidence. */
-      .hero { margin-bottom: 40px; }
-      .hero-num {
-        font-size: 52px;
-        line-height: 1.05;
-        font-weight: 600;
-        letter-spacing: -0.03em;
-        font-variant-numeric: tabular-nums;
-      }
-      .hero-label { font-size: 15px; color: var(--ink-soft); margin-top: 6px; }
-      .hero-meta { font-size: 13px; color: var(--faint); margin-top: 14px; }
-      .hero-meta span + span::before { content: "·"; margin: 0 8px; color: var(--line); }
 
       /* ------------------------------------------------------------- blocks */
       .panel {
@@ -85,13 +83,27 @@
         padding: 18px 20px;
         margin-bottom: 20px;
       }
-      .insight { border-left: 2px solid var(--accent); }
+      /* The label sat above a paragraph capped at 70ch inside a ~980px card, so
+         every line stopped 400px short of the right edge and the block read as
+         broken rather than airy. Setting the label beside the prose spends that
+         width on something, and keeps the measure readable. */
+      .insight {
+        border-left: 2px solid var(--accent);
+        display: grid; grid-template-columns: 132px 1fr; gap: 8px 28px;
+        align-items: start; padding: 22px 24px;
+      }
+      .insight .eyebrow { margin-bottom: 0; padding-top: 3px; }
       .insight-text {
-        font-size: 15px; line-height: 1.7; color: var(--ink-soft); max-width: 72ch;
+        font-size: var(--t-md); line-height: 1.7; color: var(--ink-soft);
+        max-width: 68ch;
+      }
+      @media (max-width: 720px) {
+        .insight { grid-template-columns: 1fr; gap: 10px; }
+        .insight .eyebrow { padding-top: 0; }
       }
       .section-head { margin: 32px 0 12px; }
       .eyebrow {
-        font-size: 11px;
+        font-size: var(--t-xs);
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.07em;
@@ -106,7 +118,7 @@
          it was being used for the confidence evidence line -- the text that makes a
          finding trustworthy. */
       .faint { color: var(--muted); }
-      .small { font-size: 12px; }
+      .small { font-size: var(--t-sm); }
 
       /* ------------------------------------------------------------ ingest */
       textarea {
@@ -114,7 +126,7 @@
         padding: 11px 12px;
         border: 1px solid var(--line);
         border-radius: 8px;
-        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        font: var(--t-sm)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
         color: var(--ink);
         resize: vertical;
         margin-bottom: 12px;
@@ -128,17 +140,17 @@
         border-radius: 7px;
         padding: 7px 15px;
         font: inherit;
-        font-size: 13px;
+        font-size: var(--t-base);
         font-weight: 500;
         cursor: pointer;
       }
       button.ghost { background: transparent; color: var(--ink-soft); border-color: var(--line); }
       button.ghost:hover:not(:disabled) { border-color: var(--faint); }
       button:disabled { opacity: 0.4; cursor: default; }
-      .file { font-size: 13px; color: var(--accent); cursor: pointer; }
+      .file { font-size: var(--t-base); color: var(--accent); cursor: pointer; }
       .file:hover { text-decoration: underline; }
       .file input { display: none; }
-      .error { color: var(--alarm); font-size: 13px; }
+      .error { color: var(--alarm); font-size: var(--t-sm); }
 
       /* -------------------------------------------------------------- cards */
       /* One card per finding instead of a spreadsheet row. Reading order is who ->
@@ -164,22 +176,22 @@
         position: absolute; left: 0; top: 12px; bottom: 12px;
         width: 3px; border-radius: 0 3px 3px 0;
       }
-      .card-vendor { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
-      .card-item { font-size: 12px; color: var(--muted); margin-top: 1px; }
+      .card-vendor { font-size: var(--t-md); font-weight: 600; letter-spacing: -0.01em; }
+      .card-item { font-size: var(--t-sm); color: var(--muted); margin-top: 1px; }
       .card-move {
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px;
         font-variant-numeric: tabular-nums;
       }
       /* half of the comparison the card exists to make -- it has to be readable */
-      .card-move .was { color: var(--muted); font-size: 14px; }
-      .card-move .arrow { color: var(--faint); }
-      .card-move .now { font-size: 16px; font-weight: 600; }
+      .card-move .was { color: var(--muted); font-size: var(--t-base); }
+      .card-move .arrow { color: var(--muted); }
+      .card-move .now { font-size: var(--t-md); font-weight: 600; }
       .card-evidence { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
       .card-spark { text-align: center; }
       .card-spark .spark { margin: 0 auto 4px; }
       .card-impact { text-align: right; }
-      .card-impact .impact { font-size: 26px; letter-spacing: -0.02em; }
-      .card-link { font-size: 12px; color: var(--accent); margin-top: 8px; }
+      .card-impact .impact { font-size: var(--t-xl); letter-spacing: -0.02em; }
+      .card-link { font-size: var(--t-sm); color: var(--accent); margin-top: 8px; }
       @media (max-width: 760px) {
         .card { grid-template-columns: 1fr; gap: 12px; }
         .card-spark, .card-impact { text-align: left; }
@@ -203,7 +215,7 @@
       table { width: 100%; border-collapse: collapse; }
       th, td { padding: 14px 10px; text-align: left; vertical-align: top; }
       th {
-        font-size: 11px;
+        font-size: var(--t-xs);
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.06em;
@@ -218,31 +230,31 @@
       td:last-child,  th:last-child  { padding-right: 0; }
       .num { text-align: right; font-variant-numeric: tabular-nums; }
 
-      .vendor { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+      .vendor { font-size: var(--t-md); font-weight: 600; letter-spacing: -0.01em; }
       /* Which item's price moved -- a vendor is not the unit of analysis, a
          product from that vendor is. */
-      .item-line { font-size: 12px; color: var(--muted); margin-top: 1px; }
+      .item-line { font-size: var(--t-sm); color: var(--muted); margin-top: 1px; }
       /* Says out loud when a finding rests on invoice averages rather than unit
          prices, because that evidence cannot separate price from order size. */
       .basis {
         display: inline-block; margin-left: 6px;
-        font-size: 10px; font-weight: 600; text-transform: uppercase;
+        font-size: var(--t-xs); font-weight: 600; text-transform: uppercase;
         letter-spacing: 0.04em; padding: 1px 5px; border-radius: 4px;
         background: var(--warn-bg); color: var(--warn); cursor: help;
       }
       .evidence { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
 
       /* The annualized figure is what the user acts on -- it outranks the row. */
-      .impact { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .impact { font-size: var(--t-md); font-weight: 600; font-variant-numeric: tabular-nums; }
       .rank {
-        font-size: 12px; font-variant-numeric: tabular-nums;
+        font-size: var(--t-sm); font-variant-numeric: tabular-nums;
         color: var(--faint); padding-top: 3px;
       }
 
       /* Severity has to be visible before the digits are read. */
       .delta {
         display: inline-block;
-        font-size: 12px; font-weight: 600;
+        font-size: var(--t-sm); font-weight: 600;
         font-variant-numeric: tabular-nums;
         padding: 2px 7px; border-radius: 5px;
         background: var(--warn-bg); color: var(--warn);
@@ -250,8 +262,8 @@
       .delta.high { background: var(--alarm-bg); color: var(--alarm); }
 
       .kind {
-        font-size: 10px; font-weight: 600; text-transform: uppercase;
-        letter-spacing: 0.04em; color: var(--faint); margin-top: 4px;
+        font-size: var(--t-xs); font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.04em; color: var(--muted); margin-top: 4px;
       }
       .kind.drift { color: var(--warn); }
 
@@ -263,14 +275,14 @@
 
       /* ------------------------------------------------------------- chart */
       .chart-head { display: flex; justify-content: space-between; align-items: baseline; }
-      .chart-max { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+      .chart-max { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
       .chartwrap { position: relative; margin-top: 8px; }
       .idxchart { width: 100%; height: auto; display: block; overflow: visible; }
       .idxchart .grid { stroke: var(--line-soft); stroke-width: 1; }
       /* 100 is the reference the whole chart is read against, so it is drawn. */
       .idxchart .grid.base { stroke: #c7cbd1; stroke-dasharray: 3 3; }
       .idxchart .grid.vert { stroke: var(--line-soft); }
-      .idxchart .tick { font-size: 11px; fill: var(--muted); }
+      .idxchart .tick { font-size: var(--t-xs); fill: var(--muted); }
 
       .idxchart .line {
         fill: none; stroke-width: 1.9;
@@ -297,7 +309,7 @@
       /* Hollow ring, vendor-coloured inline: marks the month the detector fired. */
       .idxchart .mark { fill: #fff; stroke-width: 2.5; }
       .idxchart .dot { stroke: #fff; stroke-width: 1.5; }
-      .idxchart .lbl { font-size: 11px; font-weight: 600; fill: var(--ink-soft); }
+      .idxchart .lbl { font-size: var(--t-xs); font-weight: 600; fill: var(--ink-soft); }
 
       /* ------------------------------------------------------------ readout */
       .tip {
@@ -311,7 +323,7 @@
         min-width: 190px;
       }
       .tip-month {
-        font-size: 11px; font-weight: 600; color: var(--muted);
+        font-size: var(--t-xs); font-weight: 600; color: var(--muted);
         text-transform: uppercase; letter-spacing: 0.05em;
         padding-bottom: 6px; margin-bottom: 6px;
         border-bottom: 1px solid var(--line-soft);
@@ -319,7 +331,7 @@
       .tip-row {
         display: grid; grid-template-columns: 8px 1fr auto auto;
         align-items: center; gap: 8px;
-        font-size: 12px; padding: 2px 0;
+        font-size: var(--t-sm); padding: 2px 0;
       }
       .swatch { width: 8px; height: 8px; border-radius: 2px; }
       .tip-name { color: var(--ink-soft); white-space: nowrap; }
@@ -331,7 +343,7 @@
         font-variant-numeric: tabular-nums; color: var(--faint);
         min-width: 34px; text-align: right;
       }
-      .empty { color: var(--muted); font-size: 14px; padding: 4px 0 2px; }
+      .empty { color: var(--muted); font-size: var(--t-base); padding: 4px 0 2px; }
 
       /* ------------------------------------------------------- vendor drawer */
       tbody tr.clickable { cursor: pointer; }
@@ -359,18 +371,18 @@
       }
       .drawer-title {
         display: flex; align-items: center; gap: 9px;
-        font-size: 17px; font-weight: 600; letter-spacing: -0.01em;
+        font-size: var(--t-md); font-weight: 600; letter-spacing: -0.01em;
       }
-      button.close { padding: 4px 9px; font-size: 13px; line-height: 1; }
+      button.close { padding: 4px 9px; font-size: var(--t-base); line-height: 1; }
       .drawer-body { overflow-y: auto; padding: 20px 22px 40px; }
 
       .statrow {
         display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
         padding-bottom: 22px; margin-bottom: 24px; border-bottom: 1px solid var(--line-soft);
       }
-      .stat { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .stat { font-size: var(--t-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-      table.mini td { padding: 7px 8px; font-size: 13px; border-bottom: 1px solid var(--line-soft); }
+      table.mini td { padding: 7px 8px; font-size: var(--t-sm); border-bottom: 1px solid var(--line-soft); }
       table.mini td:first-child { padding-left: 0; }
       table.mini td:last-child { padding-right: 0; }
       table.mini tr:last-child td { border-bottom: 0; }
@@ -384,29 +396,29 @@
         display: grid; grid-template-columns: 90px auto 1fr;
         align-items: center; gap: 10px;
       }
-      .inv-date { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
-      .inv-amt { font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; font-weight: 500; }
+      .inv-date { font-size: var(--t-sm); font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+      .inv-amt { font-size: var(--t-sm); font-variant-numeric: tabular-nums; text-align: right; font-weight: 500; }
       .inv-lines { margin: 6px 0 4px; }
       .inv-line {
         display: grid; grid-template-columns: 1fr auto 72px;
-        gap: 10px; font-size: 12px; padding: 1px 0;
+        gap: 10px; font-size: var(--t-sm); padding: 1px 0;
         font-variant-numeric: tabular-nums;
       }
       .inv-line.editing { grid-template-columns: 1fr auto 72px; align-items: center; padding: 3px 0; }
       .lineedit { display: inline-flex; align-items: center; gap: 5px; }
-      .edit.qty   { width: 62px; text-align: right; padding: 2px 5px; font-size: 12px; }
-      .edit.price { width: 78px; text-align: right; padding: 2px 5px; font-size: 12px; }
-      .tiny-save { font-size: 11px; padding: 2px 8px; }
+      .edit.qty   { width: 62px; text-align: right; padding: 2px 5px; font-size: var(--t-sm); }
+      .edit.price { width: 78px; text-align: right; padding: 2px 5px; font-size: var(--t-sm); }
+      .tiny-save { font-size: var(--t-xs); padding: 2px 8px; }
       .inv-raw {
-        font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        font: var(--t-xs)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
         color: var(--faint); margin-top: 3px;
         word-break: break-all;
       }
       .conf {
-        font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+        font-size: var(--t-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
         padding: 1px 6px; border-radius: 4px; justify-self: start;
       }
-      .conf.high   { background: #f4f4f5; color: var(--faint); }
+      .conf.high   { background: #f4f4f5; color: #52525b; }
       .conf.medium { background: var(--warn-bg); color: var(--warn); }
       .conf.low    { background: var(--alarm-bg); color: var(--alarm); }
       /* A human checked this one. Distinct from "the model felt confident". */
@@ -414,13 +426,13 @@
 
       /* ------------------------------------------------------- corrections */
       .inv .tiny {
-        font-size: 11px; padding: 2px 8px; margin-top: 6px;
+        font-size: var(--t-xs); padding: 2px 8px; margin-top: 6px;
         opacity: 0; transition: opacity 120ms ease;
       }
       .inv:hover .tiny, .inv:focus-within .tiny { opacity: 1; }
       .inv.editing { background: #fafafa; margin: 0 -10px; padding: 10px; border-radius: 8px; }
       .edit {
-        font: inherit; font-size: 13px;
+        font: inherit; font-size: var(--t-sm);
         border: 1px solid var(--line); border-radius: 6px;
         padding: 4px 7px; outline: none;
         font-variant-numeric: tabular-nums;
@@ -429,7 +441,7 @@
       .edit.amt { text-align: right; width: 100px; justify-self: end; }
       .edit.date { width: 138px; }
       .inv-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-      .inv-actions button { font-size: 12px; padding: 5px 11px; }
+      .inv-actions button { font-size: var(--t-sm); padding: 5px 11px; }
       button.danger { color: var(--alarm); border-color: var(--alarm-bg); }
       button.danger:hover:not(:disabled) { border-color: var(--alarm); }
     </style>
