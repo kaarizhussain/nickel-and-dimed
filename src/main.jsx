@@ -699,11 +699,19 @@ function App() {
              it, and where the evidence is. */
           <div className="cards">
             {alerts.map((a) => (
+              // A div with onClick is invisible to a keyboard: the page's whole
+              // focus order was two buttons, so the primary action -- opening the
+              // evidence behind a finding -- could not be reached without a mouse.
               <article
                 key={a.vendor_id}
                 className="card"
+                role="button"
+                tabIndex={0}
+                aria-label={`${a.vendor_name}, ${a.item}, ${money4(a.baseline_price)} to ${money4(a.current_price)}, ${usd(a.annualized_impact)} per year. View evidence.`}
                 onClick={() => setOpenVendor(a.vendor_id)}
-                title="See the invoices behind this number"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenVendor(a.vendor_id); }
+                }}
               >
                 <span className="card-rail" style={{ background: colors[a.vendor_id] ?? HELD }} />
 
@@ -738,6 +746,9 @@ function App() {
                 </div>
 
                 <div className="card-spark">
+                  <span className="sr-only">
+                    {a.observations} price observations, most recent {monthLabel(a.period_end)}
+                  </span>
                   <Spark
                     points={items
                       .filter((m) => m.vendor_id === a.vendor_id && m.item_key === a.item_key)
