@@ -43,6 +43,7 @@ function App() {
   const [summary, setSummary] = useState('');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
 
   const load = async () => {
@@ -54,22 +55,39 @@ function App() {
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, []);
 
+  // Extraction runs ~40 rows per Claude call, so a big export takes minutes. Sent
+  // as one request it outruns the browser's timeout and shows nothing until it
+  // either finishes or dies. Batching keeps every request short, reports progress,
+  // and lets partial work survive a failure part-way through.
   const ingest = async (body) => {
     setBusy(true);
     setError('');
     setSummary('');
+
+    const lines = body.trim().split(/\r?\n/).filter((l) => l.trim());
+    const [header, ...rest] = lines;
+    const batches = [];
+    for (let i = 0; i < rest.length; i += 200) {
+      batches.push([header, ...rest.slice(i, i + 200)].join('\n'));
+    }
+    if (!batches.length) batches.push(header ?? '');
+
     try {
-      const r = await fetch('/api/ingest', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: body }),
-      }).then((res) => res.json());
-      if (r.error) throw new Error(r.error);
+      for (let i = 0; i < batches.length; i++) {
+        if (batches.length > 1) setProgress(`Reading ${i + 1} of ${batches.length}...`);
+        const r = await fetch('/api/ingest', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: batches[i] }),
+        }).then((res) => res.json());
+        if (r.error) throw new Error(r.error);
+        await load(); // results fill in as each batch lands
+      }
       setText('');
-      await load();
     } catch (e) {
       setError(e.message);
     }
+    setProgress('');
     setBusy(false);
   };
 
@@ -100,7 +118,7 @@ function App() {
         />
         <div className="row">
           <button disabled={busy || !text.trim()} onClick={() => ingest(text)}>
-            {busy ? 'Reading...' : 'Ingest'}
+            {busy ? progress || 'Reading...' : 'Ingest'}
           </button>
           <label className="file">
             Upload CSV

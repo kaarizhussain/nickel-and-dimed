@@ -35,6 +35,11 @@ async function extract(text, vendorNames) {
   const lines = text.trim().split(/\r?\n/).filter((l) => l.trim());
   const header = lines[0];
   const out = [];
+  // Vendors named by earlier chunks have to be visible to later ones. Without
+  // this, a first ingest into an empty database starts every chunk with an empty
+  // vendor list, so each one picks its own spelling of the same business and
+  // nothing ever reconciles them.
+  const known = new Set(vendorNames);
 
   for (let i = 0; i < lines.length; i += CHUNK) {
     const body = lines.slice(i, i + CHUNK);
@@ -63,12 +68,14 @@ async function extract(text, vendorNames) {
         'cleanest form of the name as written.',
         '',
         'Existing vendors:',
-        vendorNames.length ? vendorNames.map((n) => '- ' + n).join('\n') : '(none yet)',
+        known.size ? [...known].map((n) => '- ' + n).join('\n') : '(none yet)',
       ].join('\n'),
       messages: [{ role: 'user', content: chunk }],
     });
 
-    out.push(...(res.parsed_output?.invoices ?? []));
+    const got = res.parsed_output?.invoices ?? [];
+    for (const inv of got) known.add(inv.vendor_name);
+    out.push(...got);
   }
   return out;
 }
