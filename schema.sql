@@ -34,8 +34,7 @@
 -- for item names so "Balloon Arch" and "balloon arch" are one comparable item.
 -- This is the exact-dedup safety net; fuzzy matching happens in the extraction
 -- prompt, which sees the existing vendor list.
--- ponytail: word-list suffix strip. A vendor genuinely named "Co Op Market" loses
--- its "Co". Swap in pg_trgm similarity if that ever bites.
+--
 -- lowercase -> drop legal suffixes -> drop punctuation -> collapse spaces ->
 -- drop a trailing plural from every word.
 --
@@ -231,130 +230,148 @@ select vendor_id,
 -- offset, NOT lag(..., 12): an item with any gap in its history would have
 -- lag-12-rows silently compare the wrong months.
 create or replace view item_changes as
-select m.vendor_id,
-       m.vendor_name,
-       m.item_key,
-       m.item,
-       m.basis,
-       m.month,
-       m.qty,
-       m.spend,
-       m.observations,
-       m.avg_unit_price,
-       lag(m.avg_unit_price)  over w   as prev_month_price,
+with lagged as (
+  select m.*,
+         lag(m.avg_unit_price) over (partition by m.vendor_id, m.item_key order by m.month)
+           as prev_month_price
+    from item_monthly m
+)
+select l.vendor_id, l.vendor_name, l.item_key, l.item, l.basis, l.month,
+       l.qty, l.spend, l.observations, l.avg_unit_price, l.prev_month_price,
        -- Compare against the THREE months before this one, not just the last one.
        -- A single prior month is itself a noisy estimate, so comparing one noisy
        -- number against another roughly doubles the noise in the difference.
        --
-       -- The FILTER applies the same observation floor to the baseline that the
-       -- flagged month has to clear. Without it a single-invoice month could anchor
-       -- the comparison and move the verdict, which is the exact weakness the floor
-       -- exists to close -- enforced on one side only. If every month in the window
-       -- is that thin the baseline is null and no finding is produced, which is the
-       -- right answer rather than a guess.
+       -- FILTER applies the same observation floor to the baseline that the flagged
+       -- month must clear. Without it a single-invoice month could anchor the
+       -- comparison and move the verdict -- the exact weakness the floor exists to
+       -- close, enforced on one side only. If every month in the window is that thin
+       -- the baseline is null and no finding is produced, which is the right answer
+       -- rather than a guess.
        --
        -- This is an unweighted mean of monthly means, NOT a quantity-weighted unit
        -- price, and that is deliberate: the question is "did this vendor reprice",
-       -- so each month is one observation of the quoted price regardless of how
-       -- much was bought. A quantity-weighted baseline would answer a different and
-       -- also useful question -- effective spend-weighted unit cost, which mixes in
-       -- purchasing behaviour. Measured across 210 item-months on the demo data the
-       -- two baselines diverge by at most 1.7% and change zero verdicts.
-       avg(m.avg_unit_price) filter (where m.observations >= 2) over w3 as baseline_price,
-       y.avg_unit_price                as prev_year_price,
-       sum(m.qty)             over w12 as trailing_12mo_qty,
-       sum(m.spend)           over w12 as trailing_12mo_spend
-  from item_monthly m
+       -- so each month is one observation of the quoted price regardless of how much
+       -- was bought. A quantity-weighted baseline answers a different and also
+       -- useful question -- effective spend-weighted unit cost, which mixes
+       -- purchasing behaviour back into a price signal. Measured across 210
+       -- item-months the two diverge by at most 1.7% and change zero verdicts.
+       avg(l.avg_unit_price) filter (where l.observations >= 2) over w3 as baseline_price,
+       y.avg_unit_price               as prev_year_price,
+       sum(l.qty)            over w12 as trailing_12mo_qty,
+       sum(l.spend)          over w12 as trailing_12mo_spend,
+       -- How many of the last six months moved UP. A ratchet is many small rises all
+       -- in one direction; seasonality wobbles both ways and can happen to end high.
+       count(*) filter (where l.avg_unit_price > l.prev_month_price) over w6 as rising_months
+  from lagged l
+  -- Year over year via a self-join on an exact 12-month offset, NOT lag(..., 12):
+  -- an item with any gap in its history would have lag-12-ROWS silently compare the
+  -- wrong two months.
   left join item_monthly y
-    on  y.vendor_id = m.vendor_id
-    and y.item_key  = m.item_key
-    and y.month     = (m.month - interval '12 months')::date
+    on y.vendor_id = l.vendor_id and y.item_key = l.item_key
+   and y.month = (l.month - interval '12 months')::date
 window
-  w   as (partition by m.vendor_id, m.item_key order by m.month),
-  w3  as (partition by m.vendor_id, m.item_key order by m.month
+  w3  as (partition by l.vendor_id, l.item_key order by l.month
           range between interval '3 months' preceding and interval '1 month' preceding),
-  w12 as (partition by m.vendor_id, m.item_key order by m.month
+  w6  as (partition by l.vendor_id, l.item_key order by l.month
+          range between interval '5 months' preceding and current row),
+  w12 as (partition by l.vendor_id, l.item_key order by l.month
           range between interval '11 months' preceding and current row);
 
--- A unit price that rose at least 8% above its own trailing three-month baseline.
+-- TWO KINDS OF FINDING.
 --
--- Annualized impact is the per-unit increase applied to the item's actual
--- trailing-12-month QUANTITY -- "you buy 4,200 of these a year and each now costs
--- $0.34 more". Under the old invoice-average model this multiplied by invoice
--- count instead, which silently assumed order sizes never change.
+--   jump   a discrete step away from the recent baseline: >= 8% above the trailing
+--          three months.
 --
--- Both guards were set by measuring against three years of real spend, where the
+--   drift  a slow ratchet the baseline cannot see. A trailing baseline CHASES a
+--          creeping price upward, so the gap never opens -- 2%/month for a year
+--          reads as 4% vs baseline every single month and never trips the jump
+--          rule, while the price actually rises 27%. Year over year is the
+--          comparison that cannot be walked away from. Requiring most of the last
+--          six months to have risen separates a genuine ratchet from seasonal noise
+--          that happens to end high.
+--
+-- Annualized impact is the per-unit increase times the item's actual trailing
+-- 12-month QUANTITY -- "you buy 421 of these a year and each now costs $3 more" --
+-- measured against the baseline for a jump and against last year for a drift.
+--
+-- The guards below were set by measuring three years of real spend, where the
 -- original rule (5% vs the single prior month, no minimum) produced 11 false
 -- positives out of 20 flags:
 --
---   observations >= 2  A month with one observation has no average to speak of --
---                      the "monthly average" IS that observation, so ordinary
---                      variation crosses any threshold. A floor of 3 also works
---                      but silently drops real findings from twice-monthly vendors.
+--   observations >= 2  A month with one observation has no average to speak of, so
+--                      ordinary variation crosses any threshold. A floor of 3 also
+--                      works but silently drops real findings from twice-monthly
+--                      vendors.
 --
 --   0.08 not 0.05      Measured noise landed at 5.0-6.3% and every genuine increase
---                      at 9.3-17.7%. The gap between them is empty, so the
---                      threshold belongs in it. Tuned to these vendors' volumes and
---                      variance -- re-check against your own. The properly
---                      statistical version scales by each item's own standard error.
--- Confidence is derived from the evidence already on the row, not asserted. Three
--- things make a price finding trustworthy, and each maps to a column:
---
---   basis         is it the right KIND of evidence? A finding resting on invoice
---                 averages cannot separate a price rise from a bigger order, so it
---                 is never better than low however clean the numbers look.
---   observations  is there ENOUGH of it? Two is the floor to have an average at
---                 all; four or more is a month you can lean on.
---   months_held   did it STICK? A one-month spike is as easily a product-mix change
---                 or a one-off as a repricing. An increase still standing months
---                 later is a repricing.
+--                      at 9.3-17.7%. The gap between them is empty, so the threshold
+--                      belongs in it. Tuned to these vendors' volumes and variance --
+--                      re-check it against your own. The properly statistical
+--                      version scales by each item's own standard error.
 create or replace view price_flags as
 with detected as (
-  select vendor_id,
-         vendor_name,
-         item_key,
-         item,
-         basis,
-         (month - interval '3 months')::date as period_start,
-         month                               as period_end,
-         baseline_price,
-         avg_unit_price                      as current_price,
-         observations,
-         qty,
-         trailing_12mo_qty,
-         trailing_12mo_spend,
-         round((avg_unit_price - baseline_price) / baseline_price * 100, 1)          as pct_change,
-         round((avg_unit_price - prev_year_price) / nullif(prev_year_price, 0) * 100, 1) as pct_change_yoy,
-         round((avg_unit_price - baseline_price) * trailing_12mo_qty, 2)             as annualized_impact
+  select vendor_id, vendor_name, item_key, item, basis,
+         month as period_end, baseline_price, avg_unit_price as current_price,
+         prev_year_price, observations, qty, trailing_12mo_qty, trailing_12mo_spend,
+         rising_months,
+         round((avg_unit_price - prev_year_price) / nullif(prev_year_price, 0) * 100, 1)
+           as pct_change_yoy,
+         case
+           when (avg_unit_price - baseline_price) / nullif(baseline_price, 0) >= 0.08
+             then 'jump'
+           when (avg_unit_price - prev_year_price) / nullif(prev_year_price, 0) >= 0.10
+            and rising_months >= 4
+             then 'drift'
+         end as kind
     from item_changes
-   where baseline_price > 0
-     and observations >= 2
-     and (avg_unit_price - baseline_price) / baseline_price >= 0.08
+   where observations >= 2
+),
+-- what the finding is measured against: the recent baseline for a jump, the price a
+-- year ago for a drift
+ref as (
+  select d.*,
+         case when d.kind = 'drift' then d.prev_year_price else d.baseline_price end as ref_price
+    from detected d
+   where d.kind is not null
 ),
 held as (
-  -- months at or above 5% over the old baseline, from the flag month onward
-  -- ponytail: counts months at the level, not strictly consecutive ones. Prices
-  -- rarely fall back so the two agree in practice; make it a gaps-and-islands
-  -- query if a vendor ever oscillates across the threshold.
-  select d.vendor_id, d.item_key, d.period_end,
+  select r.vendor_id, r.item_key, r.period_end,
          (select count(*) from item_monthly m
-           where m.vendor_id = d.vendor_id
-             and m.item_key  = d.item_key
-             and m.month    >= d.period_end
-             and m.avg_unit_price >= d.baseline_price * 1.05) as months_held
-    from detected d
+           where m.vendor_id = r.vendor_id
+             and m.item_key  = r.item_key
+             and m.month    >= r.period_end
+             and m.avg_unit_price >= r.ref_price * 1.05) as months_held
+    from ref r
 )
-select d.*,
+select r.vendor_id, r.vendor_name, r.item_key, r.item, r.basis, r.kind,
+       case when r.kind = 'drift' then (r.period_end - interval '12 months')::date
+            else (r.period_end - interval '3 months')::date end as period_start,
+       r.period_end,
+       r.ref_price as baseline_price,
+       r.current_price, r.observations, r.qty,
+       r.trailing_12mo_qty, r.trailing_12mo_spend, r.rising_months, r.pct_change_yoy,
+       round((r.current_price - r.ref_price) / nullif(r.ref_price, 0) * 100, 1) as pct_change,
+       round((r.current_price - r.ref_price) * r.trailing_12mo_qty, 2) as annualized_impact,
        h.months_held,
+       -- Confidence is derived from evidence already on the row, not asserted.
+       --   basis         is it the right KIND of evidence? A finding resting on
+       --                 invoice averages cannot separate a price rise from a bigger
+       --                 order, so it is never better than low however clean the
+       --                 numbers look.
+       --   observations  is there ENOUGH of it?
+       --   months_held   did it STICK? A one-month spike is as easily a product-mix
+       --                 change or a one-off as a repricing. An increase still
+       --                 standing months later is a repricing.
        case
-         when d.basis = 'invoice_average'                         then 'low'
-         when d.observations >= 4 and h.months_held >= 3          then 'high'
-         when d.observations >= 2 and h.months_held >= 2          then 'medium'
+         when r.basis = 'invoice_average'                 then 'low'
+         when r.observations >= 4 and h.months_held >= 3  then 'high'
+         when r.observations >= 2 and h.months_held >= 2  then 'medium'
          else 'low'
        end as confidence
-  from detected d
+  from ref r
   join held h
-    on h.vendor_id = d.vendor_id and h.item_key = d.item_key and h.period_end = d.period_end;
+    on h.vendor_id = r.vendor_id and h.item_key = r.item_key and h.period_end = r.period_end;
 
 -- What the dashboard reads: each vendor's worst current problem. A vendor is
 -- ranked by the item costing it the most per year, not by how many items moved.

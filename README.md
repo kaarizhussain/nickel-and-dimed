@@ -51,10 +51,24 @@ That rule exists because an invoice total moves for two unrelated reasons:
 | **order size** | 2 pizzas → 3 takes an invoice from $62 to $93 |
 | **unit price** | $31 → $34 takes the same 2-pizza order to $68 |
 
-Only the second is a vendor raising prices. Detection compares each item's unit
-price against its own trailing three-month baseline, and annualized impact is the
-per-unit increase multiplied by the item's actual trailing-12-month **quantity** —
-"you buy 421 of these a year and each now costs $3 more."
+Only the second is a vendor raising prices. Annualized impact is the per-unit
+increase multiplied by the item's actual trailing-12-month **quantity** — "you buy
+421 of these a year and each now costs $3 more."
+
+**Two kinds of finding**, because one detector cannot see both:
+
+| | |
+|---|---|
+| **jump** | a discrete step: ≥8% above the item's trailing three-month baseline |
+| **drift** | a slow ratchet: ≥10% year over year, with most of the last six months rising |
+
+Drift exists because a trailing baseline *chases a creeping price upward*. A vendor
+raising 2% a month for a year reads as **4% above baseline every single month** and
+never trips the jump rule — while the price actually rises **27%**. That's the
+quietest version of the problem this tool is named after, and the jump detector
+alone is blind to it. Year over year is the comparison that can't be walked away
+from; requiring most of the last six months to have risen separates a real ratchet
+from seasonal noise that happens to end high.
 
 **Vendors who don't itemize** are still analysed, on invoice averages. That basis
 cannot separate price from order size, so it is labelled as such on the alert
@@ -144,6 +158,8 @@ Known-answer SQL assertions, wrapped in a transaction that rolls back, so it is 
 against a database with real data in it. They cover:
 
 - **a 281% rise in invoice totals on a flat unit price raises no alert** — quantity is not price
+- **a 2%/month ratchet produces no jump at all, and is caught as drift** — 27% over a year,
+  4% above baseline every month, invisible to a jump detector
 - a genuine $31 → $37 unit-price step is caught, with the right percentage and annualized figure
 - a 3% rise stays under the threshold
 - year-over-year reaches across a ten-month gap in the history, which `lag(price, 12)` would miss
@@ -274,3 +290,9 @@ where the prose is what people actually read.
 No auth, no accounting-system integrations, no invoice OCR, no forecasting, no
 mobile layout, no multi-currency. Each is a plausible reason a two-week build never
 ships.
+
+That makes v1 deliberately a **periodic audit tool** rather than continuous AP
+monitoring. Hooking into an accounting system is the next step toward the latter,
+and it is a plumbing problem — OAuth, token refresh, incremental sync, dedup,
+reconciliation — not an analytical one, so it would have crowded out the part of
+this project worth showing.

@@ -611,7 +611,7 @@ function App() {
                 <th style={{ width: 24 }}></th>
                 <th>Vendor</th>
                 <th className="num">Unit price</th>
-                <th className="num">vs 3-mo</th>
+                <th className="num">Change</th>
                 <th className="num">YoY</th>
                 <th>Trend</th>
                 <th className="num">Annual impact</th>
@@ -656,6 +656,12 @@ function App() {
                     <span className={'delta' + (Number(a.pct_change) >= 10 ? ' high' : '')}>
                       +{Number(a.pct_change).toFixed(1)}%
                     </span>
+                    {/* a step away from the recent baseline, or a slow ratchet the
+                        baseline would otherwise absorb -- different findings, and
+                        the row says which */}
+                    <div className={'kind ' + a.kind}>
+                      {a.kind === 'drift' ? 'drift · yoy' : 'jump'}
+                    </div>
                   </td>
                   <td className="num">
                     {a.pct_change_yoy == null

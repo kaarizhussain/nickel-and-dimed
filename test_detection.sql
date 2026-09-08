@@ -236,4 +236,66 @@ begin
   raise notice 'ingest ok';
 end $$;
 
+-- ===========================================================================
+-- 5. A SLOW RATCHET IS STILL A PRICE INCREASE
+-- ===========================================================================
+-- The trailing baseline chases a creeping price upward, so the gap never opens:
+-- 2%/month for a year reads as 4% vs baseline EVERY month and never trips the 8%
+-- jump rule -- while the price rises 27%. That is the quiet increase this product
+-- exists to catch, and the jump detector alone is blind to it.
+
+insert into vendors (name) values ('Testfix Ratchet');
+
+do $
+declare v bigint; inv bigint; p numeric;
+begin
+  select id into v from vendors where name = 'Testfix Ratchet';
+  for m in 0..23 loop
+    -- flat for a year, then 2% a month for twelve: $10.00 -> $12.68
+    p := case when m < 12 then 10.00 else round(10.00 * power(1.02, m - 11), 4) end;
+    for k in 1..4 loop
+      insert into invoices (vendor_id, amount, invoice_date)
+      values (v, 0, date '2024-01-04' + (m || ' months')::interval + (k * 5 || ' days')::interval)
+      returning id into inv;
+      insert into invoice_lines (invoice_id, item, qty, unit_price) values (inv, 'widget', 10, p);
+    end loop;
+  end loop;
+  update invoices i set amount = t.total
+    from (select invoice_id, sum(line_total) as total from invoice_lines group by 1) t
+   where t.invoice_id = i.id and i.vendor_id = v;
+end $;
+
+do $
+declare f record; jumps int;
+begin
+  -- the jump rule alone never fires across the whole ratchet
+  select count(*) into jumps from price_flags
+   where vendor_name = 'Testfix Ratchet' and kind = 'jump';
+  assert jumps = 0,
+    format('a 2%%/month ratchet produces no discrete jump; got %s', jumps);
+
+  select * into f from price_flags
+   where vendor_name = 'Testfix Ratchet' and kind = 'drift'
+   order by period_end desc limit 1;
+  assert found,
+    'a price that rose 27%% over a year in small steps must be caught as drift';
+  assert f.pct_change = 26.8,
+    format('drift is measured year over year; expected 26.8, got %s', f.pct_change);
+  assert f.rising_months = 6,
+    format('all six trailing months rose; got %s', f.rising_months);
+  -- 480 units a year at $2.6824 more each
+  assert f.annualized_impact = 1287.55,
+    format('annualized_impact should be 1287.55, got %s', f.annualized_impact);
+
+  raise notice 'drift ok';
+end $;
+
+-- A flat price must never be read as drift, however much volume moves.
+do $
+begin
+  assert not exists (
+    select 1 from price_flags where vendor_name = 'Testfix Qty Decor' and kind = 'drift'),
+    'a flat unit price cannot drift';
+end $;
+
 rollback;
