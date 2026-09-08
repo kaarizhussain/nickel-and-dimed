@@ -161,16 +161,77 @@
       /* ------------------------------------------------------------- chart */
       .chart-head { display: flex; justify-content: space-between; align-items: baseline; }
       .chart-max { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
-      .idxchart { width: 100%; height: auto; display: block; margin-top: 6px; overflow: visible; }
+      .chartwrap { position: relative; margin-top: 8px; }
+      .idxchart { width: 100%; height: auto; display: block; overflow: visible; }
       .idxchart .grid { stroke: var(--line-soft); stroke-width: 1; }
       /* 100 is the reference the whole chart is read against, so it is drawn. */
-      .idxchart .grid.base { stroke: var(--line); stroke-dasharray: 3 3; }
+      .idxchart .grid.base { stroke: #c7cbd1; stroke-dasharray: 3 3; }
+      .idxchart .grid.vert { stroke: var(--line-soft); }
       .idxchart .tick { font-size: 10px; fill: var(--faint); }
-      .idxchart .line { fill: none; stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
+
+      .idxchart .line {
+        fill: none; stroke-width: 1.9;
+        stroke-linejoin: round; stroke-linecap: round;
+        stroke-dasharray: 1; stroke-dashoffset: 1;
+        animation: draw 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+      @keyframes draw { to { stroke-dashoffset: 0; } }
+      @media (prefers-reduced-motion: reduce) {
+        .idxchart .line { animation: none; stroke-dashoffset: 0; }
+      }
       /* Vendors holding their prices recede; the ones costing money carry the ink. */
-      .idxchart .line.flat { stroke: #d4d4d8; stroke-width: 1.25; }
-      .idxchart .line.up { stroke: var(--alarm); }
-      .idxchart .lbl { font-size: 11px; font-weight: 500; fill: var(--ink-soft); }
+      .idxchart .line.flat { stroke: #d4d4d8; stroke-width: 1.3; }
+      .idxchart .line.up   { stroke: var(--alarm); }
+
+      /* Invisible fat stroke: a 1.9px line is a hard mouse target. */
+      .idxchart .hit { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; }
+
+      .idxchart g.dim .line, .idxchart .lbl.dim { opacity: 0.18; }
+      .idxchart g, .idxchart .lbl { transition: opacity 140ms ease; }
+
+      .idxchart .crosshair { stroke: #a1a1aa; stroke-width: 1; stroke-dasharray: 2 3; }
+      .idxchart .mark {
+        fill: #fff; stroke: var(--alarm); stroke-width: 2.5;
+      }
+      .idxchart .dot { stroke: #fff; stroke-width: 1.5; }
+      .idxchart .dot.up { fill: var(--alarm); }
+      .idxchart .dot.flat { fill: #a1a1aa; }
+      .idxchart .lbl { font-size: 11px; font-weight: 600; fill: var(--ink-soft); }
+
+      /* ------------------------------------------------------------ readout */
+      .tip {
+        position: absolute; top: 8px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px 11px;
+        box-shadow: 0 4px 14px rgba(24, 24, 27, 0.08);
+        pointer-events: none;
+        min-width: 190px;
+      }
+      .tip-month {
+        font-size: 11px; font-weight: 600; color: var(--muted);
+        text-transform: uppercase; letter-spacing: 0.05em;
+        padding-bottom: 6px; margin-bottom: 6px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .tip-row {
+        display: grid; grid-template-columns: 8px 1fr auto auto;
+        align-items: center; gap: 8px;
+        font-size: 12px; padding: 2px 0;
+      }
+      .swatch { width: 8px; height: 8px; border-radius: 2px; }
+      .swatch.up { background: var(--alarm); }
+      .swatch.flat { background: #d4d4d8; }
+      .tip-name { color: var(--ink-soft); white-space: nowrap; }
+      .tip-idx {
+        font-variant-numeric: tabular-nums; font-weight: 600;
+        color: var(--ink); min-width: 26px; text-align: right;
+      }
+      .tip-amt {
+        font-variant-numeric: tabular-nums; color: var(--faint);
+        min-width: 34px; text-align: right;
+      }
       .empty { color: var(--muted); font-size: 14px; padding: 4px 0 2px; }
     </style>
   </head>

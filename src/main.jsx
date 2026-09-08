@@ -29,10 +29,17 @@ function Spark({ points }) {
 // as a price rise. This indexes every vendor to its own first month, so the y-axis
 // is "share of what you used to pay" and the shape of each line is the whole point:
 // flat means holding, climbing means costing you.
-function IndexChart({ monthly, flagged }) {
+// Total spend per month answers the wrong question -- a busy month looks the same
+// as a price rise. This indexes every vendor to its own early average, so the
+// y-axis reads "share of what you used to pay" and the shape of each line is the
+// whole point: flat means holding, climbing means costing you.
+const CH = { W: 760, H: 232, L: 38, R: 148, T: 18, B: 30 };
+
+function buildSeries(monthly, alerts) {
   const months = [...new Set(monthly.map((m) => m.month))].sort();
   if (months.length < 2) return null;
   const xi = Object.fromEntries(months.map((m, i) => [m, i]));
+  const flaggedAt = Object.fromEntries(alerts.map((a) => [a.vendor_id, a.period_end]));
 
   const byVendor = {};
   for (const m of monthly) {
@@ -41,69 +48,164 @@ function IndexChart({ monthly, flagged }) {
     // about its pricing moved, which contradicts the only claim this chart makes.
     if (Number(m.invoice_count) < 2) continue;
     (byVendor[m.vendor_id] ??= { name: m.vendor_name, pts: [] })
-      .pts.push([xi[m.month], Number(m.avg_invoice)]);
+      .pts.push({ x: xi[m.month], month: m.month, avg: Number(m.avg_invoice) });
   }
 
   const series = Object.entries(byVendor)
     .filter(([, v]) => v.pts.length >= 6)
     .map(([id, v]) => {
-      const pts = v.pts.slice().sort((a, b) => a[0] - b[0]);
+      const pts = v.pts.slice().sort((a, b) => a.x - b.x);
       // Index against the first few months, not the first single one. A vendor that
       // bills quarterly can open on an unusually high invoice, and dividing by that
       // one point turns ordinary variation into a fictitious 35% price drop -- which
       // also drags the shared y-axis and squashes the real increases.
       const head = pts.slice(0, Math.min(3, pts.length));
-      const base = head.reduce((s, [, y]) => s + y, 0) / head.length;
+      const base = head.reduce((s, p) => s + p.avg, 0) / head.length;
       return {
-        id,
+        id: Number(id),
         name: v.name,
-        flagged: flagged.has(Number(id)),
-        pts: pts.map(([x, y]) => [x, (y / base) * 100]),
+        short: v.name.replace(/[,]?\s+(Co\.|LLC|Inc\.?|Corp\.?)$/i, ''),
+        flagged: flaggedAt[id] != null,
+        flaggedAt: flaggedAt[id] ? xi[flaggedAt[id]] : null,
+        base,
+        pts: pts.map((p) => ({ ...p, idx: (p.avg / base) * 100 })),
       };
     })
-    // flagged drawn last so their lines sit above the flat ones
+    // flagged drawn last so their lines sit above the ones that held
     .sort((a, b) => Number(a.flagged) - Number(b.flagged));
 
-  const vals = series.flatMap((s) => s.pts.map((p) => p[1]));
-  const lo = Math.min(90, Math.floor(Math.min(...vals) / 10) * 10);
-  const hi = Math.max(115, Math.ceil(Math.max(...vals) / 10) * 10);
+  if (!series.length) return null;
+  const vals = series.flatMap((s) => s.pts.map((p) => p.idx));
+  const lo = Math.min(95, Math.floor(Math.min(...vals) / 5) * 5);
+  const hi = Math.max(115, Math.ceil(Math.max(...vals) / 5) * 5);
+  return { months, series, lo, hi };
+}
 
-  const W = 720, H = 200, L = 34, R = 132, T = 14, B = 24;
+function IndexChart({ monthly, alerts }) {
+  const [hover, setHover] = useState(null);   // month index under the cursor
+  const [active, setActive] = useState(null); // vendor id being isolated
+
+  const model = buildSeries(monthly, alerts);
+  if (!model) return null;
+  const { months, series, lo, hi } = model;
+  const { W, H, L, R, T, B } = CH;
+
   const px = (x) => L + (x / (months.length - 1)) * (W - L - R);
   const py = (y) => T + (1 - (y - lo) / (hi - lo)) * (H - T - B);
-  const path = (pts) => pts.map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`).join(' ');
+  const path = (pts) => pts.map((p) => `${px(p.x).toFixed(1)},${py(p.idx).toFixed(1)}`).join(' ');
 
+  const step = hi - lo <= 30 ? 5 : 10;
   const yTicks = [];
-  for (let v = lo; v <= hi; v += hi - lo <= 40 ? 10 : 20) yTicks.push(v);
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) yTicks.push(v);
   const janIdx = months.map((m, i) => (m.slice(5, 7) === '01' ? i : -1)).filter((i) => i >= 0);
 
+  // End labels overlap when lines converge, so nudge them apart vertically. Cheap
+  // pass, but the alternative is two vendor names printed on top of each other.
+  const ends = series
+    .filter((s) => s.flagged)
+    .map((s) => ({ s, y: py(s.pts[s.pts.length - 1].idx) }))
+    .sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) {
+    if (ends[i].y - ends[i - 1].y < 15) ends[i].y = ends[i - 1].y + 15;
+  }
+
+  const onMove = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const vx = ((e.clientX - r.left) / r.width) * W;
+    const frac = (vx - L) / (W - L - R);
+    const i = Math.round(frac * (months.length - 1));
+    setHover(i >= 0 && i < months.length ? i : null);
+  };
+
+  const readout = hover == null ? null : series
+    .map((s) => ({ s, p: s.pts.find((p) => p.x === hover) }))
+    .filter((r) => r.p)
+    .sort((a, b) => b.p.idx - a.p.idx);
+
   return (
-    <svg className="idxchart" viewBox={`0 0 ${W} ${H}`} role="img"
-         aria-label="Each vendor's average invoice, indexed to its own first month">
-      {yTicks.map((v) => (
-        <g key={v}>
-          <line x1={L} x2={W - R} y1={py(v)} y2={py(v)}
-                className={v === 100 ? 'grid base' : 'grid'} />
-          <text x={L - 7} y={py(v) + 3.5} className="tick" textAnchor="end">{v}</text>
-        </g>
-      ))}
-      {janIdx.map((i) => (
-        <text key={i} x={px(i)} y={H - 7} className="tick" textAnchor="middle">
-          {months[i].slice(0, 4)}
-        </text>
-      ))}
-      {series.map((s) => (
-        <g key={s.id}>
-          <polyline points={path(s.pts)} className={s.flagged ? 'line up' : 'line flat'} />
-          {s.flagged && (
-            <text x={px(s.pts[s.pts.length - 1][0]) + 7}
-                  y={py(s.pts[s.pts.length - 1][1]) + 3.5} className="lbl">
-              {s.name.replace(/\s+(Co\.|LLC|Inc\.?|Corp\.?)$/i, '')}
+    <div className="chartwrap">
+      <svg
+        className={'idxchart' + (active != null ? ' isolating' : '')}
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label="Each vendor's average invoice, indexed to its own early average"
+        onMouseMove={onMove}
+        onMouseLeave={() => setHover(null)}
+      >
+        {yTicks.map((v) => (
+          <g key={v}>
+            <line x1={L} x2={W - R} y1={py(v)} y2={py(v)}
+                  className={v === 100 ? 'grid base' : 'grid'} />
+            <text x={L - 8} y={py(v) + 3.5} className="tick" textAnchor="end">{v}</text>
+          </g>
+        ))}
+        {janIdx.map((i) => (
+          <g key={i}>
+            <line x1={px(i)} x2={px(i)} y1={T} y2={H - B} className="grid vert" />
+            <text x={px(i)} y={H - 10} className="tick" textAnchor="middle">
+              {months[i].slice(0, 4)}
             </text>
-          )}
-        </g>
-      ))}
-    </svg>
+          </g>
+        ))}
+
+        {hover != null && (
+          <line className="crosshair" x1={px(hover)} x2={px(hover)} y1={T} y2={H - B} />
+        )}
+
+        {series.map((s) => {
+          const dim = active != null && active !== s.id;
+          return (
+            <g key={s.id} className={dim ? 'dim' : ''}
+               onMouseEnter={() => setActive(s.id)}
+               onMouseLeave={() => setActive(null)}>
+              <polyline points={path(s.pts)} pathLength="1"
+                        className={'line ' + (s.flagged ? 'up' : 'flat')} />
+              {/* fat transparent line so thin strokes are still easy to hit */}
+              <polyline points={path(s.pts)} className="hit" />
+              {/* the month the detector fired, marked on the line that caused it */}
+              {s.flaggedAt != null && s.pts.some((p) => p.x === s.flaggedAt) && (
+                <circle className="mark"
+                        cx={px(s.flaggedAt)}
+                        cy={py(s.pts.find((p) => p.x === s.flaggedAt).idx)} r="3.5" />
+              )}
+              {hover != null && s.pts.some((p) => p.x === hover) && (
+                <circle className={'dot ' + (s.flagged ? 'up' : 'flat')}
+                        cx={px(hover)}
+                        cy={py(s.pts.find((p) => p.x === hover).idx)} r="3" />
+              )}
+            </g>
+          );
+        })}
+
+        {ends.map(({ s, y }) => (
+          <text key={s.id} x={px(s.pts[s.pts.length - 1].x) + 9} y={y + 3.5}
+                className={'lbl' + (active != null && active !== s.id ? ' dim' : '')}>
+            {s.short}
+          </text>
+        ))}
+      </svg>
+
+      {readout && readout.length > 0 && (
+        <div
+          className="tip"
+          style={
+            px(hover) / W > 0.55
+              ? { right: `${(1 - px(hover) / W) * 100 + 1.5}%` }
+              : { left: `${(px(hover) / W) * 100 + 1.5}%` }
+          }
+        >
+          <div className="tip-month">{monthLabel(months[hover])}</div>
+          {readout.map(({ s, p }) => (
+            <div key={s.id} className="tip-row">
+              <span className={'swatch ' + (s.flagged ? 'up' : 'flat')} />
+              <span className="tip-name">{s.short}</span>
+              <span className="tip-idx">{p.idx.toFixed(0)}</span>
+              <span className="tip-amt">{usd(p.avg)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -242,7 +344,7 @@ function App() {
             <div className="eyebrow">Average invoice, indexed to each vendor's first month</div>
             <div className="chart-max">100 = what you used to pay</div>
           </div>
-          <IndexChart monthly={monthly} flagged={new Set(alerts.map((a) => a.vendor_id))} />
+          <IndexChart monthly={monthly} alerts={alerts} />
         </section>
       )}
 
