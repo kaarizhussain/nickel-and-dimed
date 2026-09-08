@@ -17,16 +17,28 @@ const CATEGORIES = [
 
 // Extraction is a trust boundary: this output goes straight into money columns,
 // so the shape is validated before it reaches the database.
+//
+// Line items are what make price detection possible at all. Without qty and
+// unit_price there is no way to tell a vendor raising prices from a customer
+// buying more, so the schema asks for them wherever the source has them.
 const Extraction = z.object({
   invoices: z.array(
     z.object({
       vendor_name: z.string(),
-      amount: z.number(),
       invoice_date: z.string().describe('YYYY-MM-DD'),
       category: z.enum(CATEGORIES),
-      line_items: z.array(z.string()).describe('empty array if the record has none'),
+      lines: z
+        .array(
+          z.object({
+            item: z.string().describe('the product or service, without quantity or price'),
+            qty: z.number().describe('number of units on this line; 1 if not stated'),
+            unit_price: z.number().describe('price of ONE unit, never the line total'),
+          }),
+        )
+        .describe('one entry per line item; empty array if the record is not itemized'),
+      amount: z.number().describe('invoice total; used only when lines is empty'),
       confidence: z.enum(['low', 'medium', 'high']),
-      source_line: z.string().describe('the exact input line this came from'),
+      source_line: z.string().describe('the exact input line(s) this came from'),
     }),
   ),
 });
@@ -68,10 +80,23 @@ async function extract(text, vendorNames) {
         'Rules:',
         '- The first line may be a CSV header. If it is, do not emit an invoice for it.',
         '- Skip anything that is not an invoice: subtotals, notes, page numbers, blank rows.',
-        '- amount is the invoice total in dollars as a number. No currency symbols, no commas.',
         '- invoice_date is YYYY-MM-DD. Resolve two-digit years to the 2000s.',
-        '- confidence reflects how sure you are of amount and date specifically.',
+        '- confidence reflects how sure you are of the amounts and dates specifically.',
         '- source_line must be copied verbatim from the input.',
+        '',
+        'GROUPING: several input rows can belong to ONE invoice. Rows sharing the',
+        'same vendor and the same date are one invoice with multiple lines. Emit one',
+        'invoice object for them, not one per row.',
+        '',
+        'LINE ITEMS matter more than the total. unit_price is the price of a SINGLE',
+        'unit -- if the source gives a line total and a quantity, divide. Never put a',
+        'line total in unit_price. Strip quantity out of the item name, so "3 Cheese',
+        'Pizza" is item "Cheese Pizza" with qty 3. Use the same wording for the same',
+        'product across invoices so its price history stays comparable.',
+        '',
+        'If a record genuinely has no itemization, leave lines empty and set amount',
+        'to the invoice total. Otherwise leave amount at 0 -- it is derived from the',
+        'lines so the two can never disagree.',
         '',
         'vendor_name: match against the existing vendors below and reuse the exact',
         'spelling when it is the same business (abbreviations, legal suffixes, and',
@@ -124,6 +149,8 @@ const routes = {
 
     const { data, error } = await db.rpc('ingest_invoices', {
       payload: invoices.map(({ source_line, ...i }) => ({ ...i, raw_input: source_line })),
+      // lines ride along untouched; ingest_invoices derives each header total from
+      // them, so a header can never disagree with its own detail
     });
     if (error) throw error;
     return { inserted: data };
@@ -151,7 +178,8 @@ const routes = {
       db.from('vendors').select('*').eq('id', id).maybeSingle(),
       db.from('vendor_monthly').select('*').eq('vendor_id', id).order('month'),
       db.from('price_flags').select('*').eq('vendor_id', id).order('period_end', { ascending: false }),
-      db.from('invoices').select('id, invoice_date, amount, category, confidence, corrected_at, raw_input')
+      db.from('invoices')
+        .select('id, invoice_date, amount, category, confidence, corrected_at, raw_input, invoice_lines(item, qty, unit_price, line_total)')
         .eq('vendor_id', id).order('invoice_date', { ascending: false }).limit(INVOICE_PAGE),
       db.from('invoices').select('*', { count: 'exact', head: true }).eq('vendor_id', id),
     ]);

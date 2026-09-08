@@ -1,16 +1,31 @@
-// Reconstructs two years of Pop In! Play Space & Café vendor spend.
+// Reconstructs three years of Pop In! Play Space & Café vendor spend, itemized.
 //
-// PROVENANCE -- this matters, read it before quoting any number:
-//   Real, from the operator's memory: the vendor list, the per-party unit costs
-//   (balloons $38 base, pizza $31 base, decor $30-40), party volume (2-5 per
-//   weekend), cafe restock (~$50 biweekly), cleaning (~$50/mo), toys ($100-150
-//   every few months), and which vendors rose -- balloons after the helium
+// PROVENANCE -- read this before quoting any number:
+//
+//   REAL, from operating the business: the vendor list, the per-unit costs
+//   (balloon arch $38, pizza $31, decor kit ~$32, coffee ~$46/bag), party volume
+//   (2-5 a weekend), cafe restock (~biweekly), cleaning (~monthly), toys (every
+//   few months), and which vendors raised prices -- balloons after the helium
 //   shortage, pizza twice, coffee beans on tariffs.
-//   Modeled here: exact dates, exact amounts, and the size of each increase.
+//
+//   MODELLED HERE: exact dates, exact amounts, exact quantities, and the size of
+//   each increase. The original records were no longer accessible.
+//
 //   Vendor names are anonymized.
 //
-// So: the shape is real, the digits are reconstructed. That is the honest claim,
-// and it is a much better one than invented data.
+// So the shape is real and the digits are a synthetic reconstruction. This is not
+// a Pop In! financial record and should not be read as one.
+//
+// ---------------------------------------------------------------------------
+// WHY IT IS ITEMIZED
+//
+// An invoice total moves for two unrelated reasons and only one is a price rise:
+// order size (2 pizzas -> 3) and unit price ($31 -> $34). Theme Party Decor
+// exists in this data specifically to be the trap: its unit price never moves a
+// cent across three years while its order size trends upward, so its invoice
+// totals climb steeply. A detector reading invoice averages calls that a price
+// increase. It is not one.
+// ---------------------------------------------------------------------------
 //
 //   node seed/generate.mjs > seed/popin-2023-2025.csv
 
@@ -19,6 +34,7 @@ let s = 20260908;
 const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 const between = (lo, hi) => lo + rnd() * (hi - lo);
 const pick = (a) => a[Math.floor(rnd() * a.length)];
+const jitter = (v, pct) => v * (1 + between(-pct, pct));
 
 // Real exports spell the same vendor several ways. This is what the extractor
 // has to collapse.
@@ -31,11 +47,33 @@ const VENDORS = {
   toys:     ['Playworks Toys', 'Playworks Toys LLC'],
 };
 
-// Unit-cost floors by month index (0 = Jan 2023, through Dec 2025). Extras ride
-// on top of the base, which is why invoices sit above it rather than on it.
-const balloonBase = (m) => (m < 9 ? 38 : m === 9 ? 44 : 47); // helium shortage, Oct 2023
-const pizzaBase   = (m) => (m < 6 ? 31 : m < 14 ? 34 : 37);  // two raises: Jul 2023, Mar 2024
-const coffeeBase  = (m) => (m < 31 ? 46 : 58);               // bean tariffs, Aug 2025
+// Item names drift in spelling too -- norm() collapses them so a product keeps one
+// price history instead of splitting into three.
+const ITEMS = {
+  arch:    ['balloon arch', 'Balloon Arch', 'BALLOON ARCH'],
+  centre:  ['centerpiece', 'Centerpiece'],
+  pizza:   ['party pizza', 'Party Pizza', 'PARTY PIZZA'],
+  kit:     ['themed decor kit', 'Themed Decor Kit'],
+  beans:   ['whole bean 5lb', 'Whole Bean 5lb'],
+  snacks:  ['snack pack', 'Snack Pack'],
+  cleaner: ['cleaning supplies'],
+  toy:     ['play equipment', 'Play Equipment'],
+};
+
+// ---- unit prices by month index (0 = Jan 2023, through Dec 2025) ----
+// These are the ONLY things that step. Everything else that moves is quantity.
+const archPrice   = (m) => (m < 9 ? 38 : m === 9 ? 44 : 47);   // helium shortage, Oct 2023
+const pizzaPrice  = (m) => (m < 6 ? 31 : m < 14 ? 34 : 37);    // two raises: Jul 2023, Mar 2024
+const beanPrice   = (m) => (m < 31 ? 46 : 58);                 // bean tariffs, Aug 2025
+
+// THE TRAP. Rock steady for three years. Only the order size grows.
+const kitPrice    = () => 32;
+const kitQty      = (m) => Math.round(between(1, 2) + m * 0.09);  // ~1.5 -> ~4.7
+
+// Flat controls.
+const centrePrice = () => 6.5;
+const snackPrice  = () => 12;
+const cleanPrice  = () => 50;
 
 // Three date formats and two money formats, mixed, the way a real export is.
 const fmtDate = (y, mo, d) =>
@@ -44,14 +82,14 @@ const fmtDate = (y, mo, d) =>
     `${mo}/${d}/${String(y).slice(2)}`,
     `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
   ]);
-const fmtAmt = (n) => {
+const money = (n) => {
   const v = n.toFixed(2);
-  return rnd() < 0.45 ? `"$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2 })}"` : v;
+  return rnd() < 0.4 ? `"$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2 })}"` : v;
 };
 
 const rows = [];
-const add = (y, mo, d, vendor, desc, amt) =>
-  rows.push([fmtDate(y, mo, d), vendor, desc, fmtAmt(amt)].join(','));
+const line = (y, mo, d, vendor, item, qty, unit) =>
+  rows.push([fmtDate(y, mo, d), vendor, item, qty, money(unit), money(qty * unit)].join(','));
 
 for (let m = 0; m < 36; m++) {
   const y = 2023 + Math.floor(m / 12);
@@ -62,27 +100,40 @@ for (let m = 0; m < 36; m++) {
   const parties = Math.round(between(8, 13));
   for (let p = 0; p < parties; p++) {
     const d = Math.min(dim, Math.max(1, Math.round(between(1, dim))));
-    add(y, mo, d, pick(VENDORS.balloons), 'balloon arch + centerpieces', balloonBase(m) + between(0, 9));
-    add(y, mo, d, pick(VENDORS.pizza), 'party pizza package', pizzaBase(m) + between(0, 7));
-    add(y, mo, d, pick(VENDORS.decor), 'themed decor set', between(30, 40));
+    const bal = pick(VENDORS.balloons);
+
+    // one arch per party, plus a varying number of centerpieces: order size moves,
+    // arch price steps only at the helium shortage
+    line(y, mo, d, bal, pick(ITEMS.arch), 1, archPrice(m));
+    line(y, mo, d, bal, pick(ITEMS.centre), Math.round(between(2, 7)), centrePrice());
+
+    // pizza count varies per party; unit price steps twice
+    line(y, mo, d, pick(VENDORS.pizza), pick(ITEMS.pizza), Math.round(between(2, 5)), pizzaPrice(m));
+
+    // THE TRAP: price pinned at $32, quantity climbing all three years
+    line(y, mo, d, pick(VENDORS.decor), pick(ITEMS.kit), kitQty(m), kitPrice());
   }
 
   // cafe restock, roughly every two weeks
   for (const d of [Math.round(between(2, 8)), Math.round(between(16, 22))]) {
-    add(y, mo, d, pick(VENDORS.coffee), 'coffee beans + snacks', coffeeBase(m) + between(0, 8));
+    const cof = pick(VENDORS.coffee);
+    line(y, mo, d, cof, pick(ITEMS.beans), Math.round(between(1, 3)), jitter(beanPrice(m), 0.03));
+    line(y, mo, d, cof, pick(ITEMS.snacks), Math.round(between(1, 4)), snackPrice());
   }
 
-  // cleaning supplies, monthly
-  add(y, mo, Math.round(between(24, 28)), pick(VENDORS.cleaning), 'cleaning supplies', between(47, 53));
+  // cleaning supplies, monthly, one line, flat
+  line(y, mo, Math.round(between(24, 28)), pick(VENDORS.cleaning), pick(ITEMS.cleaner), 1,
+       jitter(cleanPrice(), 0.05));
 
-  // new toys every few months
+  // new toys every few months -- sparse on purpose, below the observation floor
   if (m % 3 === 1) {
-    add(y, mo, Math.round(between(10, 20)), pick(VENDORS.toys), 'new play equipment', between(100, 150));
+    line(y, mo, Math.round(between(10, 20)), pick(VENDORS.toys), pick(ITEMS.toy),
+         Math.round(between(1, 3)), between(45, 60));
   }
 
   // the junk a real export carries
-  if (m % 6 === 3) rows.push(`,,MONTH TOTAL,${fmtAmt(between(1400, 1900))}`);
+  if (m % 6 === 3) rows.push(`,,MONTH TOTAL,,,${money(between(1400, 1900))}`);
 }
 
-console.log('Date,Vendor,Description,Amount');
+console.log('Date,Vendor,Item,Qty,Unit Price,Line Total');
 console.log(rows.join('\n'));
