@@ -157,13 +157,17 @@ const routes = {
   },
 
   'GET /api/dashboard': async () => {
-    const [alerts, monthly] = await Promise.all([
+    const [alerts, monthly, items] = await Promise.all([
       db.from('vendor_alerts').select('*'),
       db.from('vendor_monthly').select('*').order('month'),
+      // per-item unit prices: what the chart plots, and the only series that can
+      // answer the question the product asks
+      db.from('item_monthly')
+        .select('vendor_id, vendor_name, item_key, item, month, avg_unit_price, observations, basis')
+        .order('month'),
     ]);
-    if (alerts.error) throw alerts.error;
-    if (monthly.error) throw monthly.error;
-    return { alerts: alerts.data, monthly: monthly.data };
+    for (const r of [alerts, monthly, items]) if (r.error) throw r.error;
+    return { alerts: alerts.data, monthly: monthly.data, items: items.data };
   },
 
   // The evidence behind one vendor's number. The dashboard asserts that a vendor

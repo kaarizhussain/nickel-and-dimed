@@ -47,44 +47,54 @@ function Spark({ points, color }) {
   );
 }
 
-// Total spend per month answers the wrong question -- a busy month looks the same
-// as a price rise. This indexes every vendor to its own early average, so the
-// y-axis reads "share of what you used to pay" and the shape of each line is the
-// whole point: flat means holding, climbing means costing you.
+// One line per ITEM, plotting its UNIT PRICE indexed to its own early average.
+//
+// This chart used to plot avg(invoice total) -- the exact metric the detector was
+// changed to stop trusting, because an invoice total moves with order size as
+// readily as with price. Showing one thing and detecting on another would have let
+// a reader draw a conclusion the engine explicitly refuses to draw.
+//
+// The y-axis reads "share of what you used to pay" and the shape is the whole
+// point: flat means the price held, climbing means it did not.
 const CH = { W: 760, H: 232, L: 38, R: 148, T: 18, B: 30 };
 
-function buildSeries(monthly, alerts) {
-  const months = [...new Set(monthly.map((m) => m.month))].sort();
+function buildSeries(items, alerts) {
+  const months = [...new Set(items.map((m) => m.month))].sort();
   if (months.length < 2) return null;
   const xi = Object.fromEntries(months.map((m, i) => [m, i]));
-  const flaggedAt = Object.fromEntries(alerts.map((a) => [a.vendor_id, a.period_end]));
+  // flags are per vendor AND item, so the key has to be too
+  const flaggedAt = Object.fromEntries(
+    alerts.map((a) => [a.vendor_id + '|' + a.item_key, a.period_end]),
+  );
 
-  const byVendor = {};
-  for (const m of monthly) {
-    // Same bar the detector uses: one invoice in a month is not a monthly price,
-    // it is a single invoice. Plotting it draws a vendor swinging 25% when nothing
-    // about its pricing moved, which contradicts the only claim this chart makes.
-    if (Number(m.invoice_count) < 2) continue;
-    (byVendor[m.vendor_id] ??= { name: m.vendor_name, pts: [] })
-      .pts.push({ x: xi[m.month], month: m.month, avg: Number(m.avg_invoice) });
+  const byItem = {};
+  for (const m of items) {
+    // Same bar the detector uses: one observation in a month is not a monthly
+    // price, it is a single observation. Plotting it draws a 25% swing where
+    // nothing about pricing moved, contradicting the only claim this chart makes.
+    if (Number(m.observations) < 2) continue;
+    const key = m.vendor_id + '|' + m.item_key;
+    (byItem[key] ??= { vendorId: m.vendor_id, vendor: m.vendor_name, item: m.item, pts: [] })
+      .pts.push({ x: xi[m.month], month: m.month, avg: Number(m.avg_unit_price) });
   }
 
-  const series = Object.entries(byVendor)
+  const series = Object.entries(byItem)
     .filter(([, v]) => v.pts.length >= 6)
-    .map(([id, v]) => {
+    .map(([key, v]) => {
       const pts = v.pts.slice().sort((a, b) => a.x - b.x);
-      // Index against the first few months, not the first single one. A vendor that
-      // bills quarterly can open on an unusually high invoice, and dividing by that
-      // one point turns ordinary variation into a fictitious 35% price drop -- which
-      // also drags the shared y-axis and squashes the real increases.
+      // Index against the first few months, not the first single one. A sparse item
+      // can open on an unusually high observation, and dividing by that one point
+      // turns ordinary variation into a fictitious 35% price drop -- which also
+      // drags the shared y-axis and squashes the real increases.
       const head = pts.slice(0, Math.min(3, pts.length));
       const base = head.reduce((s, p) => s + p.avg, 0) / head.length;
       return {
-        id: Number(id),
-        name: v.name,
-        short: v.name.replace(/[,]?\s+(Co\.|LLC|Inc\.?|Corp\.?)$/i, ''),
-        flagged: flaggedAt[id] != null,
-        flaggedAt: flaggedAt[id] ? xi[flaggedAt[id]] : null,
+        id: key,
+        vendorId: v.vendorId,
+        name: v.item,
+        short: v.item.length > 18 ? v.item.slice(0, 17) + '…' : v.item,
+        flagged: flaggedAt[key] != null,
+        flaggedAt: flaggedAt[key] ? xi[flaggedAt[key]] : null,
         base,
         pts: pts.map((p) => ({ ...p, idx: (p.avg / base) * 100 })),
       };
@@ -99,11 +109,11 @@ function buildSeries(monthly, alerts) {
   return { months, series, lo, hi };
 }
 
-function IndexChart({ monthly, alerts, colors }) {
+function IndexChart({ items, alerts, colors }) {
   const [hover, setHover] = useState(null);   // month index under the cursor
   const [active, setActive] = useState(null); // vendor id being isolated
 
-  const model = buildSeries(monthly, alerts);
+  const model = buildSeries(items, alerts);
   if (!model) return null;
   const { months, series, lo, hi } = model;
   const { W, H, L, R, T, B } = CH;
@@ -146,7 +156,7 @@ function IndexChart({ monthly, alerts, colors }) {
         className={'idxchart' + (active != null ? ' isolating' : '')}
         viewBox={`0 0 ${W} ${H}`}
         role="img"
-        aria-label="Each vendor's average invoice, indexed to its own early average"
+        aria-label="Each item's unit price, indexed to its own early average"
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
       >
@@ -178,7 +188,7 @@ function IndexChart({ monthly, alerts, colors }) {
                onMouseLeave={() => setActive(null)}>
               <polyline points={path(s.pts)} pathLength="1"
                         className={'line ' + (s.flagged ? 'up' : 'flat')}
-                        style={{ stroke: colors[s.id] ?? HELD }} />
+                        style={{ stroke: colors[s.vendorId] ?? HELD }} />
               {/* fat transparent line so thin strokes are still easy to hit */}
               <polyline points={path(s.pts)} className="hit" />
               {/* the month the detector fired, marked on the line that caused it */}
@@ -186,13 +196,13 @@ function IndexChart({ monthly, alerts, colors }) {
                 <circle className="mark"
                         cx={px(s.flaggedAt)}
                         cy={py(s.pts.find((p) => p.x === s.flaggedAt).idx)} r="3.5"
-                        style={{ stroke: colors[s.id] ?? HELD }} />
+                        style={{ stroke: colors[s.vendorId] ?? HELD }} />
               )}
               {hover != null && s.pts.some((p) => p.x === hover) && (
                 <circle className="dot"
                         cx={px(hover)}
                         cy={py(s.pts.find((p) => p.x === hover).idx)} r="3"
-                        style={{ fill: colors[s.id] ?? HELD }} />
+                        style={{ fill: colors[s.vendorId] ?? HELD }} />
               )}
             </g>
           );
@@ -201,7 +211,7 @@ function IndexChart({ monthly, alerts, colors }) {
         {ends.map(({ s, y }) => (
           <text key={s.id} x={px(s.pts[s.pts.length - 1].x) + 9} y={y + 3.5}
                 className={'lbl' + (active != null && active !== s.id ? ' dim' : '')}
-                style={{ fill: colors[s.id] ?? 'var(--muted)' }}>
+                style={{ fill: colors[s.vendorId] ?? 'var(--muted)' }}>
             {s.short}
           </text>
         ))}
@@ -219,7 +229,7 @@ function IndexChart({ monthly, alerts, colors }) {
           <div className="tip-month">{monthLabel(months[hover])}</div>
           {readout.map(({ s, p }) => (
             <div key={s.id} className="tip-row">
-              <span className="swatch" style={{ background: colors[s.id] ?? HELD }} />
+              <span className="swatch" style={{ background: colors[s.vendorId] ?? HELD }} />
               <span className="tip-name">{s.short}</span>
               <span className="tip-idx">{p.idx.toFixed(0)}</span>
               <span className="tip-amt">{usd(p.avg)}</span>
@@ -456,6 +466,7 @@ function exportCsv(rows) {
 function App() {
   const [alerts, setAlerts] = useState([]);
   const [monthly, setMonthly] = useState([]);
+  const [items, setItems] = useState([]);
   const [summary, setSummary] = useState('');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -467,6 +478,7 @@ function App() {
     const d = await fetch('/api/dashboard').then((r) => r.json());
     setAlerts(d.alerts ?? []);
     setMonthly(d.monthly ?? []);
+    setItems(d.items ?? []);
     fetch('/api/summary').then((r) => r.json()).then((r) => setSummary(r.summary ?? ''));
   };
 
@@ -572,13 +584,13 @@ function App() {
         </div>
       </section>
 
-      {monthly.length > 0 && (
+      {items.length > 0 && (
         <section className="panel">
           <div className="chart-head">
-            <div className="eyebrow">Average invoice, indexed to each vendor's first month</div>
-            <div className="chart-max">100 = what you used to pay</div>
+            <div className="eyebrow">Unit price by item, indexed to its own first months</div>
+            <div className="chart-max">100 = what you used to pay per unit</div>
           </div>
-          <IndexChart monthly={monthly} alerts={alerts} colors={colors} />
+          <IndexChart items={items} alerts={alerts} colors={colors} />
         </section>
       )}
 
@@ -652,9 +664,9 @@ function App() {
                   </td>
                   <td>
                     <Spark
-                      points={monthly
-                        .filter((m) => m.vendor_id === a.vendor_id)
-                        .map((m) => Number(m.spend))}
+                      points={items
+                        .filter((m) => m.vendor_id === a.vendor_id && m.item_key === a.item_key)
+                        .map((m) => Number(m.avg_unit_price))}
                       color={colors[a.vendor_id]}
                     />
                   </td>

@@ -135,7 +135,8 @@ against a database with real data in it. They cover:
 - a 3% rise stays under the threshold
 - year-over-year reaches across a ten-month gap in the history, which `lag(price, 12)` would miss
 - the trailing-12-month window excludes the month sitting exactly 12 back
-- vendors without line items still produce findings, labelled `invoice_average`
+- vendors without line items still produce findings, labelled `invoice_average`, capped
+  at low confidence, and priced against the trailing invoice count rather than a unit count
 - three spellings of one vendor collapse to a single record
 - `paper goods` and `Paper Goods` are one comparable item; invoice totals derive from their own lines
 
@@ -150,6 +151,11 @@ against a database with real data in it. They cover:
    `Acme Supply` land on one vendor.
 3. **Detect** — SQL compares each item's unit price to its own trailing baseline and
    prices the increase out over a year.
+   The dashboard chart plots the same thing the detector reads: each item's unit
+   price, indexed to its own early average. Flat means the price held; climbing
+   means it did not. It previously plotted average invoice size — the very metric
+   the detector was changed to stop trusting — so a reader could have drawn a
+   conclusion the engine explicitly refuses to draw.
 4. **Review** — click any vendor to see every flag it produced and the invoices
    underneath, each with its line items, the model's confidence, and the verbatim
    source text it was parsed from. Corrections are made in place; detection

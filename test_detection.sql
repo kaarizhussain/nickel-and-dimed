@@ -189,6 +189,15 @@ begin
     format('an invoice-average finding can never exceed low confidence, got %s', f.confidence);
   assert f.pct_change = 30.0, format('pct_change should be 30.0, got %s', f.pct_change);
 
+  -- The fallback sets qty = 1 per invoice, so trailing_12mo_qty is the trailing
+  -- INVOICE COUNT rather than a unit count. That makes the impact read "$30 more
+  -- per invoice x 8 invoices a year", which is the right multiplier for this basis
+  -- -- but only if qty really is 1, so pin both the count and the money.
+  assert f.trailing_12mo_qty = 8,
+    format('fallback qty should be the trailing invoice count, 8, got %s', f.trailing_12mo_qty);
+  assert f.annualized_impact = 240.00,
+    format('annualized_impact should be 240.00 (30 x 8 invoices), got %s', f.annualized_impact);
+
   raise notice 'invoice-average fallback ok';
 end $$;
 
