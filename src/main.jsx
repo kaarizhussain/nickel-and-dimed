@@ -189,7 +189,11 @@ function App() {
                   <td className="muted">{a.impact_rank}</td>
                   <td>
                     <strong>{a.vendor_name}</strong>
-                    <div className="muted small">since {monthLabel(a.period_start)}</div>
+                    {/* period_end is the month the increase showed up. period_start is
+                        the start of the baseline it is measured against, which is three
+                        months earlier -- labelling that "since" reads as a much older
+                        increase than actually happened. */}
+                    <div className="muted small">since {monthLabel(a.period_end)}</div>
                   </td>
                   <td className="num">
                     {usd(a.current_avg)}

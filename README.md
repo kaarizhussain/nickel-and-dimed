@@ -74,10 +74,56 @@ exclude the month that sits exactly 12 back; and three spellings of one vendor h
 to collapse to a single row. Wraps itself in a transaction and rolls back, so it is
 safe to run against a database with real data in it.
 
-`sample-input.csv` is a shape example for smoke-testing the pipeline — inconsistent
-vendor spellings, three date formats, dollar signs, and a subtotal row that should
-be skipped. It is **not** the seed data. Replace it with real Pop In! numbers
-before recording the demo; a real finding on real numbers is the whole point.
+`sample-input.csv` is a small shape example for smoke-testing the pipeline —
+inconsistent vendor spellings, three date formats, dollar signs, and a subtotal row
+that should be skipped.
+
+## The demo data
+
+`seed/popin-2023-2025.csv` is three years of vendor spend from Pop In! Play Space &
+Café — 1,253 invoices across six vendors. Where it comes from matters, so:
+
+**Real, from operating the business:** the vendor list, the per-party unit costs
+(balloons $38 base, pizza $31, decor $30–40), party volume (2–5 a weekend), café
+restock (~$50 biweekly), cleaning (~$50/mo), toys ($100–150 every few months), and
+which vendors rose — balloons after the helium shortage, pizza twice, coffee beans
+on tariffs.
+
+**Reconstructed:** exact dates, exact amounts, and the size of each increase. The
+original records were no longer accessible. Vendor names are anonymized.
+
+So the *shape* is real and the digits are modeled. `seed/generate.mjs` is
+deterministic and carries the same note at the top, so the file regenerates
+identically and nobody has to guess which numbers are which.
+
+Public procurement data was the obvious alternative and turned out not to work:
+city payment records are contract disbursements, not recurring invoices. The
+steadiest vendor in Chicago's dataset still swings 42% month to month, which would
+have produced confident dollar figures on noise.
+
+## What it found, and what it got wrong first
+
+Against those three years the detector caught all four known increases — balloons
+Oct 2023 (+14.9%), pizza Jul 2023 (+11.0%) and Mar 2024 (+9.3%), coffee Aug 2025
+(+14.4%, and +26.3% year over year).
+
+It also flagged six vendors that had no trend at all: **11 of 20 flags were false.**
+Worst case, a decor vendor with deliberately random $30–40 pricing produced a
+$301/yr "finding" ranked *above* the real coffee increase, because it bills 132
+times a year and the annualized multiplier scales noise as readily as signal.
+
+Two causes. Comparing against the single prior month meant comparing one noisy
+estimate against another, roughly doubling the noise in the difference — now a
+three-month trailing baseline. And a vendor billing once a month has no average at
+all, so ordinary variation crossed any threshold — now a floor of two invoices in
+the month. The threshold moved 5% → 8% because measured noise landed at 5.0–6.3%
+and every genuine increase at 9.3–17.7%, with an empty gap between.
+
+Result: 7 flags, all four real increases, zero false positives.
+
+Worth noting a floor of *three* invoices also eliminated every false positive — and
+silently dropped the coffee increase, because coffee bills twice a month. Trading a
+real finding for a cleaner dashboard is not visible unless you check for it.
 
 ## Where the SQL lives
 
