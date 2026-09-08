@@ -226,6 +226,118 @@ function IndexChart({ monthly, alerts, colors }) {
   );
 }
 
+// The dashboard asserts a number. This is where someone checks it: every flag the
+// vendor produced, and the invoices underneath with the exact text each was parsed
+// from. In a tool where a model read the source documents, provenance is not a
+// nice-to-have -- it is the difference between a claim and evidence.
+function VendorDrawer({ id, color, onClose }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    setData(null);
+    setErr('');
+    fetch(`/api/vendor?id=${id}`)
+      .then((r) => r.json())
+      .then((d) => live && (d.error ? setErr(d.error) : setData(d)))
+      .catch((e) => live && setErr(e.message));
+    return () => { live = false; };
+  }, [id]);
+
+  useEffect(() => {
+    const esc = (e) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+
+  const totalSpend = data?.monthly?.reduce((s, m) => s + Number(m.spend), 0) ?? 0;
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <aside className="drawer" role="dialog" aria-label="Vendor detail">
+        <div className="drawer-head">
+          <div>
+            <div className="drawer-title">
+              <span className="swatch" style={{ background: color ?? HELD }} />
+              {data ? data.vendor.name : 'Loading...'}
+            </div>
+            {data && (
+              <div className="faint small">
+                matched as “{data.vendor.normalized_name}”
+                {data.vendor.category ? ` · ${data.vendor.category}` : ''}
+              </div>
+            )}
+          </div>
+          <button className="ghost close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        {err && <p className="error">{err}</p>}
+
+        {data && (
+          <div className="drawer-body">
+            <div className="statrow">
+              <div><div className="stat">{data.invoiceCount}</div><div className="faint small">invoices</div></div>
+              <div><div className="stat">{usd(totalSpend)}</div><div className="faint small">total spend</div></div>
+              <div>
+                <div className="stat">{data.monthly.length}</div>
+                <div className="faint small">months active</div>
+              </div>
+            </div>
+
+            <div className="eyebrow">
+              Price flags{data.flags.length ? ` (${data.flags.length})` : ''}
+            </div>
+            {data.flags.length === 0 ? (
+              <p className="empty small">Never crossed the threshold. This vendor held its prices.</p>
+            ) : (
+              <table className="mini">
+                <tbody>
+                  {data.flags.map((f) => (
+                    <tr key={f.period_end}>
+                      <td>{monthLabel(f.period_end)}</td>
+                      <td className="num">
+                        <span className={'delta' + (Number(f.pct_change) >= 10 ? ' high' : '')}>
+                          +{Number(f.pct_change).toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="num faint">
+                        {usd(f.baseline_avg)} → {usd(f.current_avg)}
+                      </td>
+                      <td className="num strong">{usd(f.annualized_impact)}/yr</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <div className="eyebrow" style={{ marginTop: 26 }}>
+              Invoices
+              {data.invoiceCount > data.shown && (
+                <span className="faint"> — most recent {data.shown} of {data.invoiceCount}</span>
+              )}
+            </div>
+            <div className="invoices">
+              {data.invoices.map((inv, i) => (
+                <div key={i} className="inv">
+                  <div className="inv-top">
+                    <span className="inv-date">{inv.invoice_date}</span>
+                    <span className={'conf ' + inv.confidence}>{inv.confidence}</span>
+                    <span className="inv-amt">{usd(inv.amount)}</span>
+                  </div>
+                  {/* what the model actually read, verbatim */}
+                  {inv.raw_input && <div className="inv-raw">{inv.raw_input}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </aside>
+    </>
+  );
+}
+
 function exportCsv(rows) {
   const cols = [
     'vendor_name', 'period_start', 'period_end', 'baseline_avg', 'current_avg',
@@ -246,6 +358,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
+  const [openVendor, setOpenVendor] = useState(null);
 
   const load = async () => {
     const d = await fetch('/api/dashboard').then((r) => r.json());
@@ -391,7 +504,9 @@ function App() {
             </thead>
             <tbody>
               {alerts.map((a) => (
-                <tr key={a.vendor_id}>
+                <tr key={a.vendor_id} className="clickable"
+                    onClick={() => setOpenVendor(a.vendor_id)}
+                    title="See the invoices behind this number">
                   <td className="rank">{a.impact_rank}</td>
                   <td>
                     <div className="vendor">{a.vendor_name}</div>
@@ -431,6 +546,14 @@ function App() {
           </table>
         )}
       </section>
+
+      {openVendor != null && (
+        <VendorDrawer
+          id={openVendor}
+          color={colors[openVendor]}
+          onClose={() => setOpenVendor(null)}
+        />
+      )}
     </main>
   );
 }

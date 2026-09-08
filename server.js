@@ -31,6 +31,10 @@ const Extraction = z.object({
 // ever get long enough to blow the context window.
 const CHUNK = 40;
 
+// A vendor with three years of history has hundreds of invoices; the drill-down
+// shows the most recent slice and says so rather than shipping all of them.
+const INVOICE_PAGE = 100;
+
 async function extract(text, vendorNames) {
   const lines = text.trim().split(/\r?\n/).filter((l) => l.trim());
   const header = lines[0];
@@ -123,6 +127,35 @@ const routes = {
     if (alerts.error) throw alerts.error;
     if (monthly.error) throw monthly.error;
     return { alerts: alerts.data, monthly: monthly.data };
+  },
+
+  // The evidence behind one vendor's number. The dashboard asserts that a vendor
+  // cost you $947; this is how someone checks that claim -- every flag it ever
+  // produced, and the invoices underneath with the exact source line each was
+  // parsed from and how sure the model was.
+  'GET /api/vendor': async (req) => {
+    const id = Number(new URL(req.url, 'http://localhost').searchParams.get('id'));
+    if (!Number.isInteger(id) || id <= 0) throw new Error('bad vendor id');
+
+    const [vendor, monthly, flags, invoices, count] = await Promise.all([
+      db.from('vendors').select('*').eq('id', id).maybeSingle(),
+      db.from('vendor_monthly').select('*').eq('vendor_id', id).order('month'),
+      db.from('price_flags').select('*').eq('vendor_id', id).order('period_end', { ascending: false }),
+      db.from('invoices').select('invoice_date, amount, category, confidence, raw_input')
+        .eq('vendor_id', id).order('invoice_date', { ascending: false }).limit(INVOICE_PAGE),
+      db.from('invoices').select('*', { count: 'exact', head: true }).eq('vendor_id', id),
+    ]);
+    for (const r of [vendor, monthly, flags, invoices, count]) if (r.error) throw r.error;
+    if (!vendor.data) throw new Error('no such vendor');
+
+    return {
+      vendor: vendor.data,
+      monthly: monthly.data,
+      flags: flags.data,
+      invoices: invoices.data,
+      invoiceCount: count.count,
+      shown: invoices.data.length,
+    };
   },
 
   // Separate from /dashboard so the table paints immediately and the prose lands after.
