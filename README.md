@@ -171,6 +171,8 @@ against a database with real data in it. They cover:
 - a record with any malformed line is rejected whole, and lines stay attached to their own invoice
   even when the rejected record sits in the middle of the batch
 - an invoice total cannot be left disagreeing with the sum of its lines
+- a vendor split across two records surfaces for review, on catalogue overlap rather
+  than name distance, and the six genuine vendors are never proposed as duplicates
 - three spellings of one vendor collapse to a single record
 - `paper goods` and `Paper Goods` are one comparable item; invoice totals derive from their own lines
 
@@ -209,6 +211,29 @@ because it is derived from its lines and a database trigger keeps it that way. A
 itemized invoice refuses a direct edit to its total and tells you to correct the
 lines instead. Because every flag is a view, a correction re-derives detection
 immediately — no cache, no recompute job, no stale alert.
+
+### Duplicate vendors are surfaced, never auto-merged
+
+A duplicate vendor silently shatters a price series — one business under two records
+means two half-length histories, neither long enough to detect anything. `norm()`
+cannot bridge `Sysco Foods NYC` and `Sysco New York`; only the extraction prompt
+can, and when it slips there needs to be something that notices.
+
+`vendor_merge_candidates` surfaces likely duplicates for a person to judge. It
+merges nothing, because auto-merging is the dangerous direction: two genuinely
+different vendors collapsed into one corrupts every series they touch, invisibly,
+while a duplicate is at least visible.
+
+It uses two signals because neither works alone:
+
+| Signal | Catches | Misses |
+|---|---|---|
+| trigram name distance | typos, truncations (`acme supply`/`acme supplie` = 0.667) | regional naming |
+| shared catalogue | two records billing for the same products | vendors with no overlap yet |
+
+Measured: `sysco food nyc`/`sysco new york` scores **0.304**, while
+`smith and son`/`smith brother` — different businesses — scores **0.286**. No name
+threshold separates those, which is exactly why the catalogue overlap is there.
 
 ### Normalization is deliberately exact, not fuzzy
 

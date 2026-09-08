@@ -421,4 +421,52 @@ begin
   raise notice 'amount contract ok';
 end $$;
 
+-- ===========================================================================
+-- 9. A SPLIT VENDOR IS DETECTABLE
+-- ===========================================================================
+-- norm() cannot bridge "Sysco Foods NYC" and "Sysco New York" -- they normalize to
+-- genuinely different keys, so the extraction prompt is the only thing merging them.
+-- When it slips, the price series shatters into two half-length histories. Nothing
+-- used to notice.
+--
+-- Name distance alone cannot carry this: those two score 0.304, and "smith and son"
+-- vs "smith brother" -- different businesses -- scores 0.286. The catalogue overlap
+-- is what separates them.
+
+do $$
+declare va bigint; vb bigint; inv bigint; c record;
+begin
+  insert into vendors (name) values ('Sysco Foods NYC') returning id into va;
+  insert into vendors (name) values ('Sysco New York')  returning id into vb;
+
+  insert into invoices (vendor_id, amount, invoice_date) values (va, 0, date '2025-01-05')
+  returning id into inv;
+  insert into invoice_lines (invoice_id, item, qty, unit_price)
+  values (inv, 'case of produce', 4, 22.00), (inv, 'dairy crate', 2, 18.00);
+
+  insert into invoices (vendor_id, amount, invoice_date) values (vb, 0, date '2025-02-05')
+  returning id into inv;
+  insert into invoice_lines (invoice_id, item, qty, unit_price)
+  values (inv, 'case of produce', 4, 23.00), (inv, 'dairy crate', 2, 19.00);
+
+  select * into c from vendor_merge_candidates
+   where a_name in ('Sysco Foods NYC', 'Sysco New York')
+     and b_name in ('Sysco Foods NYC', 'Sysco New York');
+  assert found, 'a split vendor must surface for review';
+  assert c.shared_items = 2,
+    format('the catalogue overlap is the signal that carries this; got %s', c.shared_items);
+  assert c.name_similarity < 0.40,
+    format('and name distance alone would have missed it at %s', c.name_similarity);
+  assert c.why = 'same catalogue, similar name', format('unexpected reason: %s', c.why);
+
+  -- and the six real vendors must not be proposed for merging with each other
+  assert not exists (
+    select 1 from vendor_merge_candidates
+     where a_name not like 'Sysco%' and b_name not like 'Sysco%'
+       and a_name not like 'Testfix%' and b_name not like 'Testfix%'),
+    'genuinely distinct vendors must not be proposed as duplicates';
+
+  raise notice 'split-vendor review ok';
+end $$;
+
 rollback;

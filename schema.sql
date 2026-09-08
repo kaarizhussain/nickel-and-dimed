@@ -27,6 +27,28 @@
 --
 -- Three tables: vendors, invoices, invoice_lines. Every flag is a view derived
 -- from them, so detection has no write path and can never go stale.
+--
+-- ============================================================================
+-- TUNING: every number that decides what counts as a finding
+-- ============================================================================
+-- The detection logic lives in SQL rather than application code, which makes it
+-- fast and inspectable but means sensitivity is tuned here. These are all of them:
+--
+--   0.08   jump threshold -- price vs its trailing 3-month baseline   [price_flags]
+--   0.10   drift threshold -- price vs the same month last year       [price_flags]
+--   4      rising months required before drift is called              [price_flags]
+--   2      observations a month needs to count at all      [item_changes, price_flags]
+--   3      months in the trailing baseline window                   [item_changes w3]
+--   6      months the rising-month count looks back                 [item_changes w6]
+--   11     months in the trailing quantity window                  [item_changes w12]
+--   1.05   how far above the reference a month must sit to count as "still held"
+--                                                                     [price_flags]
+--
+-- They are deliberately literals rather than a settings table or wrapper functions:
+-- one indirection layer to change a constant makes the window definitions harder to
+-- read, and reading them is the point. Change a number, re-run this file, done --
+-- every flag is a view, so nothing needs recomputing or invalidating afterwards.
+-- ============================================================================
 
 -- ---------------------------------------------------------------- normalization
 
@@ -442,3 +464,69 @@ alter view item_changes       set (security_invoker = on);
 alter view price_flags        set (security_invoker = on);
 alter view vendor_alerts      set (security_invoker = on);
 alter view vendor_monthly     set (security_invoker = on);
+
+-- ---------------------------------------------------- duplicate vendor review
+
+-- Duplicate vendors silently shatter a price series: one business under two records
+-- means two half-length histories, neither long enough to detect anything. norm()
+-- only catches what it can PROVE -- casing, punctuation, legal suffixes, plurals.
+-- Judgement calls ("Sysco Foods NYC" and "Sysco New York") live in the extraction
+-- prompt, and when the model slips there was nothing to notice it.
+--
+-- This merges NOTHING. Auto-merging is the dangerous direction: two genuinely
+-- different vendors collapsed into one corrupts every series they touch, invisibly,
+-- whereas a duplicate is at least visible and fixable. It surfaces candidates for a
+-- person -- the same division of labour as everywhere else here.
+--
+-- TWO SIGNALS, because neither is sufficient alone:
+--
+--   name_similarity  trigram distance. Strong on typos and truncations
+--                    ("acme supply" / "acme supplie" = 0.667). WEAK on regional
+--                    naming: "sysco food nyc" / "sysco new york" scores 0.304 while
+--                    "smith and son" / "smith brother" -- different businesses --
+--                    scores 0.286. No threshold separates those two, so name
+--                    distance alone cannot be trusted for that class of duplicate.
+--
+--   shared_items     how much of their catalogue overlaps. Two records billing for
+--                    the same products are far more likely one vendor, and this is
+--                    the signal that reaches the case string distance cannot.
+create extension if not exists pg_trgm with schema extensions;
+
+create or replace view vendor_merge_candidates as
+with pairs as (
+  select a.id as a_id, a.name as a_name, a.normalized_name as a_key,
+         b.id as b_id, b.name as b_name, b.normalized_name as b_key,
+         round(extensions.similarity(a.normalized_name, b.normalized_name)::numeric, 3)
+           as name_similarity
+    from vendors a
+    join vendors b on b.id > a.id          -- each pair once, never against itself
+),
+catalogue as (
+  select p.a_id, p.b_id,
+         count(*) filter (where ia.item_key is not null and ib.item_key is not null)
+           as shared_items
+    from pairs p
+    left join (select distinct i.vendor_id, l.item_key
+                 from invoice_lines l join invoices i on i.id = l.invoice_id) ia
+           on ia.vendor_id = p.a_id
+    left join (select distinct i.vendor_id, l.item_key
+                 from invoice_lines l join invoices i on i.id = l.invoice_id) ib
+           on ib.vendor_id = p.b_id and ib.item_key = ia.item_key
+   group by p.a_id, p.b_id
+)
+select p.a_id, p.a_name, p.b_id, p.b_name,
+       p.name_similarity,
+       coalesce(c.shared_items, 0) as shared_items,
+       case
+         when p.name_similarity >= 0.55 then 'likely same vendor'
+         when coalesce(c.shared_items, 0) >= 2 and p.name_similarity >= 0.25
+           then 'same catalogue, similar name'
+         else 'worth a look'
+       end as why
+  from pairs p
+  left join catalogue c on c.a_id = p.a_id and c.b_id = p.b_id
+ where p.name_similarity >= 0.40
+    or (coalesce(c.shared_items, 0) >= 2 and p.name_similarity >= 0.25)
+ order by p.name_similarity desc;
+
+alter view vendor_merge_candidates set (security_invoker = on);
