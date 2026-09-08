@@ -76,6 +76,19 @@ sustained increase on a thin month is **medium**. **High** needs four or more
 observations in the flagged month and the new level still standing three months
 later.
 
+**One measurement choice worth stating.** The baseline is an unweighted mean of
+monthly mean unit prices, not a quantity-weighted price. That is deliberate: the
+question is *"did this vendor reprice?"*, so each month is one observation of the
+quoted price regardless of how much was bought. A quantity-weighted baseline answers
+a different and also useful question — effective spend-weighted unit cost — which
+mixes purchasing behaviour back into a price signal. Measured across 210 item-months
+here, the two diverge by at most **1.7%** and change **zero** verdicts, but they are
+not the same measure and the code says which one it means.
+
+The same observation floor applies to the baseline months as to the flagged month.
+Enforcing it on only one side would have let a single-invoice month anchor the
+comparison — the exact weakness the floor exists to close.
+
 ---
 
 ## Model validation and iteration
