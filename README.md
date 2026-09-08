@@ -10,7 +10,8 @@ year-over-year cost about 10%. This is that job, automated.
 
 ## What the analysis found
 
-Three years of spend, 1,193 invoices, 1,698 line items, six vendors.
+Three years of spend, **1,193 invoices, 1,692 line items, six vendors** — loaded from
+1,698 CSV rows, six of which are subtotal junk the ingest correctly refuses.
 
 | Vendor | Item | Price move | When | Per year | Confidence |
 |---|---|---|---|---|---|
