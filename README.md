@@ -6,6 +6,9 @@ quietly raising prices on you, and what that costs over a year.
 I ran vendor negotiations by hand for four years at a play space and café and cut
 year-over-year cost about 10%. This is that job, automated.
 
+![The dashboard: $2,190/year across three vendors, a plain-English summary, per-item
+unit-price history, and one card per finding with its evidence](docs/dashboard.png)
+
 ---
 
 ## What the analysis found
