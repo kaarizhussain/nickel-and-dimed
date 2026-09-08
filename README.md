@@ -61,9 +61,13 @@ Then open the Vite URL and drop in `sample-input.csv`.
 psql "$DATABASE_URL" -f test_detection.sql
 ```
 
-Known-answer test on the detection math: a 10% jump on four invoices a year has to
-come out at exactly $40/yr, and a 3% jump has to stay under the threshold. Wraps
-itself in a transaction and rolls back, so it is safe against a seeded database.
+Ten known-answer assertions, verified green against Postgres 17. A 10% jump on
+four invoices a year has to come out at exactly $40/yr; a 3% jump has to stay under
+the threshold; year-over-year has to reach across a ten-month gap in the fixture
+(which is what `lag(..., 12)` would miss); the trailing-12-month window has to
+exclude the month that sits exactly 12 back; and three spellings of one vendor have
+to collapse to a single row. Wraps itself in a transaction and rolls back, so it is
+safe to run against a database with real data in it.
 
 `sample-input.csv` is a shape example for smoke-testing the pipeline — inconsistent
 vendor spellings, three date formats, dollar signs, and a subtotal row that should
