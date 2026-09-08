@@ -1,0 +1,102 @@
+# Ledger
+
+Hand it a messy vendor spend export. Within a minute it tells you which vendor is
+quietly costing you the most, and what that adds up to over a year.
+
+I ran vendor negotiations by hand for four years and cut year-over-year cost about
+10%. This is that job, automated.
+
+## How it works
+
+1. **Ingest** — paste raw invoice text or drop a CSV. Nothing is pre-parsed; the
+   messy input goes straight through.
+2. **Extract** — Claude returns structured invoices against a schema, and matches
+   each vendor against the list already in the database, so `ACME Supply Co.` and
+   `Acme Supply` land on one vendor instead of two.
+3. **Detect** — SQL finds month-over-month and year-over-year moves in each
+   vendor's average invoice, flags anything past 5%, and prices the increase out
+   over a year.
+4. **Display** — one page, vendors ranked by what they cost you annually, with a
+   three-sentence summary at the top and a CSV export.
+
+## Setup
+
+```bash
+npm install
+```
+
+Create the schema — paste `schema.sql` into the Supabase SQL editor, or:
+
+```bash
+psql "$DATABASE_URL" -f schema.sql
+```
+
+Create `.env` in this directory:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_SERVICE_KEY=<service_role key>
+```
+
+The service_role key stays server-side. The browser only ever talks to the Node
+API, never to Supabase directly — which is why the tables can run RLS with no
+policies at all.
+
+Two terminals:
+
+```bash
+npm run api
+```
+
+```bash
+npm run dev
+```
+
+Then open the Vite URL and drop in `sample-input.csv`.
+
+## Checks
+
+```bash
+psql "$DATABASE_URL" -f test_detection.sql
+```
+
+Known-answer test on the detection math: a 10% jump on four invoices a year has to
+come out at exactly $40/yr, and a 3% jump has to stay under the threshold. Wraps
+itself in a transaction and rolls back, so it is safe against a seeded database.
+
+`sample-input.csv` is a shape example for smoke-testing the pipeline — inconsistent
+vendor spellings, three date formats, dollar signs, and a subtotal row that should
+be skipped. It is **not** the seed data. Replace it with real Pop In! numbers
+before recording the demo; a real finding on real numbers is the whole point.
+
+## Where the SQL lives
+
+Detection is written by hand in `schema.sql` rather than pushed through an ORM,
+because the detection *is* the product:
+
+- `vendor_changes` — `lag()` for month-over-month, and a `RANGE BETWEEN INTERVAL
+  '11 months' PRECEDING` window for trailing-12-month spend and invoice volume.
+- Year-over-year is a **self-join on an exact 12-month offset**, not `lag(..., 12)`.
+  A vendor with any gap in its history would have lag-12-*rows* silently compare
+  the wrong two months.
+- `price_flags` — the 5% threshold and the annualized-impact arithmetic, in one
+  place. Annualized impact is the per-invoice increase times the vendor's actual
+  trailing-12-month invoice count: "if this holds, it costs you $X a year."
+- `vendor_alerts` — `DISTINCT ON` for each vendor's most recent flag, then `RANK()`
+  by annual cost.
+- `ingest_invoices(jsonb)` — upserts vendors and inserts invoices in one round trip.
+
+## Data model
+
+Two tables, `vendors` and `invoices`. `price_flags` is a **view**, not a table:
+it is derived entirely from `invoices`, so there is no write path and it cannot go
+stale. `norm()` (lowercase, strip legal suffixes and punctuation) backs a unique
+index on `vendors`, so deduplication is a database constraint rather than
+application code.
+
+## Not in v1
+
+No auth, no QuickBooks or Square integration, no invoice OCR, no forecasting, no
+mobile layout, no multi-currency. Each of those is a plausible reason a two-week
+build never ships.
