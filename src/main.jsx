@@ -25,6 +25,88 @@ function Spark({ points }) {
   );
 }
 
+// Total spend per month answers the wrong question -- a busy month looks the same
+// as a price rise. This indexes every vendor to its own first month, so the y-axis
+// is "share of what you used to pay" and the shape of each line is the whole point:
+// flat means holding, climbing means costing you.
+function IndexChart({ monthly, flagged }) {
+  const months = [...new Set(monthly.map((m) => m.month))].sort();
+  if (months.length < 2) return null;
+  const xi = Object.fromEntries(months.map((m, i) => [m, i]));
+
+  const byVendor = {};
+  for (const m of monthly) {
+    // Same bar the detector uses: one invoice in a month is not a monthly price,
+    // it is a single invoice. Plotting it draws a vendor swinging 25% when nothing
+    // about its pricing moved, which contradicts the only claim this chart makes.
+    if (Number(m.invoice_count) < 2) continue;
+    (byVendor[m.vendor_id] ??= { name: m.vendor_name, pts: [] })
+      .pts.push([xi[m.month], Number(m.avg_invoice)]);
+  }
+
+  const series = Object.entries(byVendor)
+    .filter(([, v]) => v.pts.length >= 6)
+    .map(([id, v]) => {
+      const pts = v.pts.slice().sort((a, b) => a[0] - b[0]);
+      // Index against the first few months, not the first single one. A vendor that
+      // bills quarterly can open on an unusually high invoice, and dividing by that
+      // one point turns ordinary variation into a fictitious 35% price drop -- which
+      // also drags the shared y-axis and squashes the real increases.
+      const head = pts.slice(0, Math.min(3, pts.length));
+      const base = head.reduce((s, [, y]) => s + y, 0) / head.length;
+      return {
+        id,
+        name: v.name,
+        flagged: flagged.has(Number(id)),
+        pts: pts.map(([x, y]) => [x, (y / base) * 100]),
+      };
+    })
+    // flagged drawn last so their lines sit above the flat ones
+    .sort((a, b) => Number(a.flagged) - Number(b.flagged));
+
+  const vals = series.flatMap((s) => s.pts.map((p) => p[1]));
+  const lo = Math.min(90, Math.floor(Math.min(...vals) / 10) * 10);
+  const hi = Math.max(115, Math.ceil(Math.max(...vals) / 10) * 10);
+
+  const W = 720, H = 200, L = 34, R = 132, T = 14, B = 24;
+  const px = (x) => L + (x / (months.length - 1)) * (W - L - R);
+  const py = (y) => T + (1 - (y - lo) / (hi - lo)) * (H - T - B);
+  const path = (pts) => pts.map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`).join(' ');
+
+  const yTicks = [];
+  for (let v = lo; v <= hi; v += hi - lo <= 40 ? 10 : 20) yTicks.push(v);
+  const janIdx = months.map((m, i) => (m.slice(5, 7) === '01' ? i : -1)).filter((i) => i >= 0);
+
+  return (
+    <svg className="idxchart" viewBox={`0 0 ${W} ${H}`} role="img"
+         aria-label="Each vendor's average invoice, indexed to its own first month">
+      {yTicks.map((v) => (
+        <g key={v}>
+          <line x1={L} x2={W - R} y1={py(v)} y2={py(v)}
+                className={v === 100 ? 'grid base' : 'grid'} />
+          <text x={L - 7} y={py(v) + 3.5} className="tick" textAnchor="end">{v}</text>
+        </g>
+      ))}
+      {janIdx.map((i) => (
+        <text key={i} x={px(i)} y={H - 7} className="tick" textAnchor="middle">
+          {months[i].slice(0, 4)}
+        </text>
+      ))}
+      {series.map((s) => (
+        <g key={s.id}>
+          <polyline points={path(s.pts)} className={s.flagged ? 'line up' : 'line flat'} />
+          {s.flagged && (
+            <text x={px(s.pts[s.pts.length - 1][0]) + 7}
+                  y={py(s.pts[s.pts.length - 1][1]) + 3.5} className="lbl">
+              {s.name.replace(/\s+(Co\.|LLC|Inc\.?|Corp\.?)$/i, '')}
+            </text>
+          )}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 function exportCsv(rows) {
   const cols = [
     'vendor_name', 'period_start', 'period_end', 'baseline_avg', 'current_avg',
@@ -154,23 +236,13 @@ function App() {
         </div>
       </section>
 
-      {totals.length > 0 && (
+      {monthly.length > 0 && (
         <section className="panel">
           <div className="chart-head">
-            <div className="eyebrow">Total spend by month</div>
-            <div className="chart-max">peak {usd(peak)}</div>
+            <div className="eyebrow">Average invoice, indexed to each vendor's first month</div>
+            <div className="chart-max">100 = what you used to pay</div>
           </div>
-          <div className="bars">
-            {totals.map(([m, v], i) => (
-              <div key={m} className="bar" title={`${monthLabel(m)}: ${usd(v)}`}>
-                <div className="track">
-                  <div className="fill" style={{ height: `${(v / peak) * 100}%` }} />
-                </div>
-                {/* 36 labels do not fit; every third keeps the axis readable */}
-                <span>{i % 3 === 0 ? monthLabel(m) : ''}</span>
-              </div>
-            ))}
-          </div>
+          <IndexChart monthly={monthly} flagged={new Set(alerts.map((a) => a.vendor_id))} />
         </section>
       )}
 
