@@ -9,8 +9,25 @@ const usd = (n) =>
 const monthLabel = (d) =>
   new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 
+// Hue carries identity, not severity -- grey vs coloured already says whether a
+// vendor is rising, so painting all the risers the same red left three identical
+// lines and three identical tooltip swatches. Spread in hue rather than by
+// lightness so red/green colour blindness does not collapse any pair.
+const FLAG_COLORS = ['#b91c1c', '#7c3aed', '#0369a1', '#b45309', '#0f766e', '#be185d'];
+const HELD = '#d4d4d8';
+
+// Keyed off rank so the worst offender is always the first colour, and so a
+// vendor keeps its colour between the chart and its row in the table.
+const colorMap = (alerts) =>
+  Object.fromEntries(
+    alerts
+      .slice()
+      .sort((a, b) => a.impact_rank - b.impact_rank)
+      .map((a, i) => [a.vendor_id, FLAG_COLORS[i % FLAG_COLORS.length]]),
+  );
+
 // Native SVG beats a chart library for twelve points on one line.
-function Spark({ points }) {
+function Spark({ points, color }) {
   if (points.length < 2) return <span className="muted">&mdash;</span>;
   const hi = Math.max(...points);
   const lo = Math.min(...points);
@@ -20,15 +37,11 @@ function Spark({ points }) {
     .join(' ');
   return (
     <svg className="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={coords} />
+      <polyline points={coords} style={{ stroke: color }} />
     </svg>
   );
 }
 
-// Total spend per month answers the wrong question -- a busy month looks the same
-// as a price rise. This indexes every vendor to its own first month, so the y-axis
-// is "share of what you used to pay" and the shape of each line is the whole point:
-// flat means holding, climbing means costing you.
 // Total spend per month answers the wrong question -- a busy month looks the same
 // as a price rise. This indexes every vendor to its own early average, so the
 // y-axis reads "share of what you used to pay" and the shape of each line is the
@@ -81,7 +94,7 @@ function buildSeries(monthly, alerts) {
   return { months, series, lo, hi };
 }
 
-function IndexChart({ monthly, alerts }) {
+function IndexChart({ monthly, alerts, colors }) {
   const [hover, setHover] = useState(null);   // month index under the cursor
   const [active, setActive] = useState(null); // vendor id being isolated
 
@@ -159,19 +172,22 @@ function IndexChart({ monthly, alerts }) {
                onMouseEnter={() => setActive(s.id)}
                onMouseLeave={() => setActive(null)}>
               <polyline points={path(s.pts)} pathLength="1"
-                        className={'line ' + (s.flagged ? 'up' : 'flat')} />
+                        className={'line ' + (s.flagged ? 'up' : 'flat')}
+                        style={{ stroke: colors[s.id] ?? HELD }} />
               {/* fat transparent line so thin strokes are still easy to hit */}
               <polyline points={path(s.pts)} className="hit" />
               {/* the month the detector fired, marked on the line that caused it */}
               {s.flaggedAt != null && s.pts.some((p) => p.x === s.flaggedAt) && (
                 <circle className="mark"
                         cx={px(s.flaggedAt)}
-                        cy={py(s.pts.find((p) => p.x === s.flaggedAt).idx)} r="3.5" />
+                        cy={py(s.pts.find((p) => p.x === s.flaggedAt).idx)} r="3.5"
+                        style={{ stroke: colors[s.id] ?? HELD }} />
               )}
               {hover != null && s.pts.some((p) => p.x === hover) && (
-                <circle className={'dot ' + (s.flagged ? 'up' : 'flat')}
+                <circle className="dot"
                         cx={px(hover)}
-                        cy={py(s.pts.find((p) => p.x === hover).idx)} r="3" />
+                        cy={py(s.pts.find((p) => p.x === hover).idx)} r="3"
+                        style={{ fill: colors[s.id] ?? HELD }} />
               )}
             </g>
           );
@@ -179,7 +195,8 @@ function IndexChart({ monthly, alerts }) {
 
         {ends.map(({ s, y }) => (
           <text key={s.id} x={px(s.pts[s.pts.length - 1].x) + 9} y={y + 3.5}
-                className={'lbl' + (active != null && active !== s.id ? ' dim' : '')}>
+                className={'lbl' + (active != null && active !== s.id ? ' dim' : '')}
+                style={{ fill: colors[s.id] ?? 'var(--muted)' }}>
             {s.short}
           </text>
         ))}
@@ -197,7 +214,7 @@ function IndexChart({ monthly, alerts }) {
           <div className="tip-month">{monthLabel(months[hover])}</div>
           {readout.map(({ s, p }) => (
             <div key={s.id} className="tip-row">
-              <span className={'swatch ' + (s.flagged ? 'up' : 'flat')} />
+              <span className="swatch" style={{ background: colors[s.id] ?? HELD }} />
               <span className="tip-name">{s.short}</span>
               <span className="tip-idx">{p.idx.toFixed(0)}</span>
               <span className="tip-amt">{usd(p.avg)}</span>
@@ -287,6 +304,7 @@ function App() {
   const annualTotal = alerts.reduce((s, a) => s + Number(a.annualized_impact), 0);
 
   const trackedVendors = new Set(monthly.map((m) => m.vendor_id)).size;
+  const colors = colorMap(alerts);
 
   return (
     <main>
@@ -344,7 +362,7 @@ function App() {
             <div className="eyebrow">Average invoice, indexed to each vendor's first month</div>
             <div className="chart-max">100 = what you used to pay</div>
           </div>
-          <IndexChart monthly={monthly} alerts={alerts} />
+          <IndexChart monthly={monthly} alerts={alerts} colors={colors} />
         </section>
       )}
 
@@ -403,6 +421,7 @@ function App() {
                       points={monthly
                         .filter((m) => m.vendor_id === a.vendor_id)
                         .map((m) => Number(m.spend))}
+                      color={colors[a.vendor_id]}
                     />
                   </td>
                   <td className="num impact">{usd(a.annualized_impact)}</td>

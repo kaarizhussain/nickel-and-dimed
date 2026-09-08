@@ -154,7 +154,7 @@
 
       .spark { width: 104px; height: 30px; display: block; }
       .spark polyline {
-        fill: none; stroke: var(--accent); stroke-width: 1.5;
+        fill: none; stroke: #a1a1aa; stroke-width: 1.5;
         stroke-linejoin: round; vector-effect: non-scaling-stroke;
       }
 
@@ -179,9 +179,10 @@
       @media (prefers-reduced-motion: reduce) {
         .idxchart .line { animation: none; stroke-dashoffset: 0; }
       }
-      /* Vendors holding their prices recede; the ones costing money carry the ink. */
-      .idxchart .line.flat { stroke: #d4d4d8; stroke-width: 1.3; }
-      .idxchart .line.up   { stroke: var(--alarm); }
+      /* Vendors holding their prices recede; the ones costing money carry the ink.
+         Stroke colour is set per vendor inline -- hue identifies which line is
+         which, and the same hue keys that vendor's sparkline in the table. */
+      .idxchart .line.flat { stroke-width: 1.3; }
 
       /* Invisible fat stroke: a 1.9px line is a hard mouse target. */
       .idxchart .hit { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; }
@@ -190,12 +191,9 @@
       .idxchart g, .idxchart .lbl { transition: opacity 140ms ease; }
 
       .idxchart .crosshair { stroke: #a1a1aa; stroke-width: 1; stroke-dasharray: 2 3; }
-      .idxchart .mark {
-        fill: #fff; stroke: var(--alarm); stroke-width: 2.5;
-      }
+      /* Hollow ring, vendor-coloured inline: marks the month the detector fired. */
+      .idxchart .mark { fill: #fff; stroke-width: 2.5; }
       .idxchart .dot { stroke: #fff; stroke-width: 1.5; }
-      .idxchart .dot.up { fill: var(--alarm); }
-      .idxchart .dot.flat { fill: #a1a1aa; }
       .idxchart .lbl { font-size: 11px; font-weight: 600; fill: var(--ink-soft); }
 
       /* ------------------------------------------------------------ readout */
@@ -221,8 +219,6 @@
         font-size: 12px; padding: 2px 0;
       }
       .swatch { width: 8px; height: 8px; border-radius: 2px; }
-      .swatch.up { background: var(--alarm); }
-      .swatch.flat { background: #d4d4d8; }
       .tip-name { color: var(--ink-soft); white-space: nowrap; }
       .tip-idx {
         font-variant-numeric: tabular-nums; font-weight: 600;
