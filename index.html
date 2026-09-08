@@ -135,6 +135,17 @@
       .num { text-align: right; font-variant-numeric: tabular-nums; }
 
       .vendor { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+      /* Which item's price moved -- a vendor is not the unit of analysis, a
+         product from that vendor is. */
+      .item-line { font-size: 12px; color: var(--muted); margin-top: 1px; }
+      /* Says out loud when a finding rests on invoice averages rather than unit
+         prices, because that evidence cannot separate price from order size. */
+      .basis {
+        display: inline-block; margin-left: 6px;
+        font-size: 10px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.04em; padding: 1px 5px; border-radius: 4px;
+        background: var(--warn-bg); color: var(--warn); cursor: help;
+      }
       /* The annualized figure is what the user acts on -- it outranks the row. */
       .impact { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
       .rank {
@@ -283,6 +294,12 @@
       }
       .inv-date { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
       .inv-amt { font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; font-weight: 500; }
+      .inv-lines { margin: 6px 0 4px; }
+      .inv-line {
+        display: grid; grid-template-columns: 1fr auto 72px;
+        gap: 10px; font-size: 12px; padding: 1px 0;
+        font-variant-numeric: tabular-nums;
+      }
       .inv-raw {
         font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
         color: var(--faint); margin-top: 3px;

@@ -6,6 +6,11 @@ const usd = (n) =>
     style: 'currency', currency: 'USD', maximumFractionDigits: 0,
   });
 
+// Unit prices live in cents -- $6.50 vs $7.00 is a 7.7% rise that usd() would
+// render as "$7 was $7".
+const money4 = (n) =>
+  Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
 const monthLabel = (d) =>
   new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 
@@ -286,6 +291,20 @@ function InvoiceRow({ inv, onSaved }) {
         )}
       </div>
 
+      {/* The line items are the actual price observations -- the invoice total is
+          just their sum. This is what detection reads. */}
+      {inv.invoice_lines?.length > 0 && (
+        <div className="inv-lines">
+          {inv.invoice_lines.map((l, i) => (
+            <div key={i} className="inv-line">
+              <span>{l.item}</span>
+              <span className="faint">{Number(l.qty)} &times; {money4(l.unit_price)}</span>
+              <span className="num faint">{money4(l.line_total)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* what the model was actually handed. Never editable -- correcting a reading
           must not rewrite the evidence it is being corrected against. */}
       {inv.raw_input && <div className="inv-raw">{inv.raw_input}</div>}
@@ -391,7 +410,7 @@ function VendorDrawer({ id, color, onClose, onChanged }) {
                         </span>
                       </td>
                       <td className="num faint">
-                        {usd(f.baseline_avg)} → {usd(f.current_avg)}
+                        {usd(f.baseline_price)} → {usd(f.current_price)}
                       </td>
                       <td className="num strong">{usd(f.annualized_impact)}/yr</td>
                     </tr>
@@ -424,7 +443,7 @@ function VendorDrawer({ id, color, onClose, onChanged }) {
 
 function exportCsv(rows) {
   const cols = [
-    'vendor_name', 'period_start', 'period_end', 'baseline_avg', 'current_avg',
+    'vendor_name', 'period_start', 'period_end', 'baseline_price', 'current_price',
     'pct_change', 'pct_change_yoy', 'annualized_impact',
   ];
   const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
@@ -579,7 +598,7 @@ function App() {
               <tr>
                 <th style={{ width: 24 }}></th>
                 <th>Vendor</th>
-                <th className="num">Avg invoice</th>
+                <th className="num">Unit price</th>
                 <th className="num">vs 3-mo</th>
                 <th className="num">YoY</th>
                 <th>Trend</th>
@@ -594,6 +613,14 @@ function App() {
                   <td className="rank">{a.impact_rank}</td>
                   <td>
                     <div className="vendor">{a.vendor_name}</div>
+                    <div className="item-line">
+                      {a.item}
+                      {a.basis === 'invoice_average' && (
+                        <span className="basis" title="This vendor does not itemize, so the comparison is invoice averages -- it cannot separate a price rise from a bigger order.">
+                          invoice avg
+                        </span>
+                      )}
+                    </div>
                     {/* period_end is the month the increase showed up. period_start is
                         the start of the baseline it is measured against, which is three
                         months earlier -- labelling that "since" reads as a much older
@@ -601,8 +628,8 @@ function App() {
                     <div className="faint small">since {monthLabel(a.period_end)}</div>
                   </td>
                   <td className="num">
-                    {usd(a.current_avg)}
-                    <div className="faint small">was {usd(a.baseline_avg)}</div>
+                    {money4(a.current_price)}
+                    <div className="faint small">was {money4(a.baseline_price)}</div>
                   </td>
                   <td className="num">
                     {/* severity readable before the digits are */}
@@ -623,7 +650,12 @@ function App() {
                       color={colors[a.vendor_id]}
                     />
                   </td>
-                  <td className="num impact">{usd(a.annualized_impact)}</td>
+                  <td className="num">
+                    <div className="impact">{usd(a.annualized_impact)}</div>
+                    <div className="faint small">
+                      {Math.round(Number(a.trailing_12mo_qty)).toLocaleString()} units/yr
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
