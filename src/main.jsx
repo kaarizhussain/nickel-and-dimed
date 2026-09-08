@@ -127,7 +127,9 @@ function App() {
           <div className="bars">
             {totals.map(([m, v]) => (
               <div key={m} className="bar" title={`${monthLabel(m)}: ${usd(v)}`}>
-                <div className="fill" style={{ height: `${(v / peak) * 100}%` }} />
+                <div className="track">
+                  <div className="fill" style={{ height: `${(v / peak) * 100}%` }} />
+                </div>
                 <span>{monthLabel(m)}</span>
               </div>
             ))}
