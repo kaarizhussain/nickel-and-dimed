@@ -322,7 +322,12 @@ npm run api     # terminal 1
 npm run dev     # terminal 2
 ```
 
-Then drop in `sample-input.csv`, or load the full demo dataset:
+Then drop in `sample-input.csv` — twelve rows carrying four spellings of one vendor
+and two of another, `paper goods` and `Paper Goods` as one item, three date formats,
+a subtotal row that must be skipped, and one deliberately non-itemized vendor, so a
+single paste exercises both the unit-price path and the invoice-average fallback.
+
+Or load the full demo dataset:
 
 ```bash
 node --env-file=.env seed/load.mjs
