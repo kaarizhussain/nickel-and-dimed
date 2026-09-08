@@ -102,12 +102,29 @@ function App() {
 
   const annualTotal = alerts.reduce((s, a) => s + Number(a.annualized_impact), 0);
 
+  const trackedVendors = new Set(monthly.map((m) => m.vendor_id)).size;
+
   return (
     <main>
-      <header>
+      <div className="masthead">
         <h1>Nickel and Dimed</h1>
-        <p className="muted">Vendor spend, and which vendors are quietly creeping up.</p>
-      </header>
+        <p>vendor spend, and who is quietly creeping up</p>
+      </div>
+
+      {alerts.length > 0 && (
+        <section className="hero">
+          <div className="hero-num">{usd(annualTotal)}</div>
+          <div className="hero-label">
+            a year, if these increases hold
+          </div>
+          <div className="hero-meta">
+            <span>{alerts.length} of {trackedVendors} vendors raising prices</span>
+            <span>{totals.length} months of history</span>
+          </div>
+        </section>
+      )}
+
+      {summary && <section className="summary">{summary}</section>}
 
       <section className="panel">
         <textarea
@@ -137,18 +154,20 @@ function App() {
         </div>
       </section>
 
-      {summary && <section className="summary">{summary}</section>}
-
       {totals.length > 0 && (
         <section className="panel">
-          <h2>Total spend by month</h2>
+          <div className="chart-head">
+            <div className="eyebrow">Total spend by month</div>
+            <div className="chart-max">peak {usd(peak)}</div>
+          </div>
           <div className="bars">
-            {totals.map(([m, v]) => (
+            {totals.map(([m, v], i) => (
               <div key={m} className="bar" title={`${monthLabel(m)}: ${usd(v)}`}>
                 <div className="track">
                   <div className="fill" style={{ height: `${(v / peak) * 100}%` }} />
                 </div>
-                <span>{monthLabel(m)}</span>
+                {/* 36 labels do not fit; every third keeps the axis readable */}
+                <span>{i % 3 === 0 ? monthLabel(m) : ''}</span>
               </div>
             ))}
           </div>
@@ -157,24 +176,19 @@ function App() {
 
       <section className="panel">
         <div className="row spread">
-          <h2>
-            Flagged vendors
-            {alerts.length > 0 && (
-              <span className="muted"> &middot; {usd(annualTotal)}/yr if nothing changes</span>
-            )}
-          </h2>
+          <div className="eyebrow" style={{ marginBottom: 0 }}>Flagged vendors</div>
           <button className="ghost" disabled={!alerts.length} onClick={() => exportCsv(alerts)}>
             Export CSV
           </button>
         </div>
 
         {alerts.length === 0 ? (
-          <p className="muted">Nothing over the 8% threshold. Ingest some records to start.</p>
+          <p className="empty">Nothing over the 8% threshold. Ingest some records to start.</p>
         ) : (
           <table>
             <thead>
               <tr>
-                <th>#</th>
+                <th style={{ width: 24 }}></th>
                 <th>Vendor</th>
                 <th className="num">Avg invoice</th>
                 <th className="num">vs 3-mo</th>
@@ -186,23 +200,28 @@ function App() {
             <tbody>
               {alerts.map((a) => (
                 <tr key={a.vendor_id}>
-                  <td className="muted">{a.impact_rank}</td>
+                  <td className="rank">{a.impact_rank}</td>
                   <td>
-                    <strong>{a.vendor_name}</strong>
+                    <div className="vendor">{a.vendor_name}</div>
                     {/* period_end is the month the increase showed up. period_start is
                         the start of the baseline it is measured against, which is three
                         months earlier -- labelling that "since" reads as a much older
                         increase than actually happened. */}
-                    <div className="muted small">since {monthLabel(a.period_end)}</div>
+                    <div className="faint small">since {monthLabel(a.period_end)}</div>
                   </td>
                   <td className="num">
                     {usd(a.current_avg)}
-                    <div className="muted small">3-mo avg {usd(a.baseline_avg)}</div>
+                    <div className="faint small">was {usd(a.baseline_avg)}</div>
                   </td>
-                  <td className="num up">+{Number(a.pct_change).toFixed(1)}%</td>
+                  <td className="num">
+                    {/* severity readable before the digits are */}
+                    <span className={'delta' + (Number(a.pct_change) >= 10 ? ' high' : '')}>
+                      +{Number(a.pct_change).toFixed(1)}%
+                    </span>
+                  </td>
                   <td className="num">
                     {a.pct_change_yoy == null
-                      ? <span className="muted">&mdash;</span>
+                      ? <span className="faint">&mdash;</span>
                       : `${Number(a.pct_change_yoy) > 0 ? '+' : ''}${Number(a.pct_change_yoy).toFixed(1)}%`}
                   </td>
                   <td>
@@ -212,7 +231,7 @@ function App() {
                         .map((m) => Number(m.spend))}
                     />
                   </td>
-                  <td className="num strong">{usd(a.annualized_impact)}</td>
+                  <td className="num impact">{usd(a.annualized_impact)}</td>
                 </tr>
               ))}
             </tbody>

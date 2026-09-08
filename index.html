@@ -6,100 +6,175 @@
     <title>Nickel and Dimed</title>
     <style>
       :root {
-        --ink: #16181d;
-        --muted: #6b7280;
-        --line: #e3e6ea;
-        --bg: #f7f8fa;
-        --card: #fff;
-        --accent: #1f6feb;
-        --up: #b42318;
+        --ink:      #18181b;
+        --ink-soft: #3f3f46;
+        --muted:    #71717a;
+        --faint:    #a1a1aa;
+        --line:     #e4e4e7;
+        --line-soft:#f4f4f5;
+        --bg:       #fafafa;
+        --card:     #ffffff;
+        --accent:   #4f46e5;
+        --warn:     #b45309;
+        --warn-bg:  #fef3c7;
+        --alarm:    #b91c1c;
+        --alarm-bg: #fee2e2;
+        --radius:   10px;
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--ink);
-        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+        font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
-      main { max-width: 1040px; margin: 0 auto; padding: 40px 24px 80px; }
-      header { margin-bottom: 24px; }
-      h1 { margin: 0; font-size: 26px; letter-spacing: -0.01em; }
-      h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
-      p { margin: 4px 0 0; }
+      main { max-width: 1040px; margin: 0 auto; padding: 56px 28px 96px; }
+      h1, h2, h3, p { margin: 0; }
 
+      /* ---------------------------------------------------------- masthead */
+      .masthead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 40px; }
+      .masthead h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+      .masthead p { font-size: 13px; color: var(--muted); }
+
+      /* The headline number. This is the entire product in one figure, so it gets
+         the weight -- everything else on the page is supporting evidence. */
+      .hero { margin-bottom: 40px; }
+      .hero-num {
+        font-size: 52px;
+        line-height: 1.05;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        font-variant-numeric: tabular-nums;
+      }
+      .hero-label { font-size: 15px; color: var(--ink-soft); margin-top: 6px; }
+      .hero-meta { font-size: 13px; color: var(--faint); margin-top: 14px; }
+      .hero-meta span + span::before { content: "·"; margin: 0 8px; color: var(--line); }
+
+      /* ------------------------------------------------------------- blocks */
       .panel {
         background: var(--card);
         border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 16px;
+        border-radius: var(--radius);
+        padding: 18px 20px;
+        margin-bottom: 20px;
       }
+      /* A rule, not a filled box -- the prose should read as prose. */
       .summary {
-        background: #eef4ff;
-        border: 1px solid #cfe0ff;
-        border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 16px;
+        border-left: 2px solid var(--accent);
+        padding: 2px 0 2px 18px;
+        margin-bottom: 40px;
+        font-size: 15px;
+        line-height: 1.65;
+        color: var(--ink-soft);
+        max-width: 68ch;
+      }
+      .eyebrow {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--faint);
+        margin-bottom: 14px;
       }
       .row { display: flex; align-items: center; gap: 12px; }
       .row.spread { justify-content: space-between; }
       .muted { color: var(--muted); }
+      .faint { color: var(--faint); }
       .small { font-size: 12px; }
-      .strong { font-weight: 600; }
-      .error { color: var(--up); font-size: 13px; }
-      .up { color: var(--up); }
 
+      /* ------------------------------------------------------------ ingest */
       textarea {
         width: 100%;
-        padding: 10px;
+        padding: 11px 12px;
         border: 1px solid var(--line);
         border-radius: 8px;
         font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--ink);
         resize: vertical;
         margin-bottom: 12px;
+        outline: none;
       }
+      textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #4f46e51a; }
       button {
         border: 1px solid var(--accent);
         background: var(--accent);
         color: #fff;
         border-radius: 7px;
-        padding: 7px 14px;
+        padding: 7px 15px;
         font: inherit;
-        font-size: 14px;
+        font-size: 13px;
+        font-weight: 500;
         cursor: pointer;
       }
-      button.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
-      button:disabled { opacity: 0.45; cursor: default; }
-      .file {
-        font-size: 14px;
-        color: var(--accent);
-        cursor: pointer;
-        text-decoration: underline;
-      }
+      button.ghost { background: transparent; color: var(--ink-soft); border-color: var(--line); }
+      button.ghost:hover:not(:disabled) { border-color: var(--faint); }
+      button:disabled { opacity: 0.4; cursor: default; }
+      .file { font-size: 13px; color: var(--accent); cursor: pointer; }
+      .file:hover { text-decoration: underline; }
       .file input { display: none; }
+      .error { color: var(--alarm); font-size: 13px; }
 
+      /* ------------------------------------------------------------- table */
       table { width: 100%; border-collapse: collapse; }
-      th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+      th, td { padding: 14px 10px; text-align: left; vertical-align: top; }
       th {
         font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--muted);
         font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--faint);
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--line);
       }
-      tbody tr:last-child td { border-bottom: 0; }
+      tbody tr { border-bottom: 1px solid var(--line-soft); }
+      tbody tr:last-child { border-bottom: 0; }
+      tbody tr:hover { background: #fafafa; }
+      td:first-child, th:first-child { padding-left: 0; }
+      td:last-child,  th:last-child  { padding-right: 0; }
       .num { text-align: right; font-variant-numeric: tabular-nums; }
 
-      .spark { width: 92px; height: 30px; display: block; }
-      .spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+      .vendor { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+      /* The annualized figure is what the user acts on -- it outranks the row. */
+      .impact { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .rank {
+        font-size: 12px; font-variant-numeric: tabular-nums;
+        color: var(--faint); padding-top: 3px;
+      }
 
-      .bars { display: flex; align-items: flex-end; gap: 6px; height: 110px; }
+      /* Severity has to be visible before the digits are read. */
+      .delta {
+        display: inline-block;
+        font-size: 12px; font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        padding: 2px 7px; border-radius: 5px;
+        background: var(--warn-bg); color: var(--warn);
+      }
+      .delta.high { background: var(--alarm-bg); color: var(--alarm); }
+
+      .spark { width: 104px; height: 30px; display: block; }
+      .spark polyline {
+        fill: none; stroke: var(--accent); stroke-width: 1.5;
+        stroke-linejoin: round; vector-effect: non-scaling-stroke;
+      }
+
+      /* ------------------------------------------------------------- chart */
+      .chart-head { display: flex; justify-content: space-between; align-items: baseline; }
+      .chart-max { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+      .bars { display: flex; align-items: flex-end; gap: 3px; height: 96px; margin-top: 4px; }
       .bar { flex: 1; display: flex; flex-direction: column; height: 100%; }
       /* .fill needs a parent with a definite height or the flex algorithm sizes it
          and the percentage height is silently ignored -- every bar comes out equal. */
       .bar .track { flex: 1; display: flex; align-items: flex-end; }
-      .bar .fill { width: 100%; background: #c7d7f5; border-radius: 3px 3px 0 0; min-height: 2px; }
-      .bar span { font-size: 10px; color: var(--muted); text-align: center; padding-top: 4px; }
+      .bar .fill {
+        width: 100%; background: #c7d2fe; border-radius: 2px 2px 0 0; min-height: 2px;
+      }
+      .bar:hover .fill { background: var(--accent); }
+      .bar span {
+        font-size: 10px; color: var(--faint); text-align: center;
+        padding-top: 6px; height: 18px; white-space: nowrap;
+      }
+      .empty { color: var(--muted); font-size: 14px; padding: 4px 0 2px; }
     </style>
   </head>
   <body>
