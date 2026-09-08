@@ -298,4 +298,127 @@ begin
     'a flat unit price cannot drift';
 end $;
 
+-- ===========================================================================
+-- 6. CORRECTIONS REACH THE ANALYSIS
+-- ===========================================================================
+-- Quantity and unit price ARE the analysis. A correction workflow that cannot
+-- touch them can only fix the fields nothing is computed from. These three prove
+-- the loop closes: a human edit changes the finding, and the evidence survives.
+
+insert into vendors (name) values ('Testfix Correct');
+
+do $$
+declare v bigint; inv bigint;
+begin
+  select id into v from vendors where name = 'Testfix Correct';
+  for m in 0..7 loop
+    for k in 1..4 loop
+      insert into invoices (vendor_id, amount, invoice_date, raw_input, confidence)
+      values (v, 0, date '2025-01-04' + (m || ' months')::interval + (k * 5 || ' days')::interval,
+              'src row ' || m || '-' || k, 'high')
+      returning id into inv;
+      insert into invoice_lines (invoice_id, item, qty, unit_price)
+      values (inv, 'widget', 10, case when m < 5 then 10.00 else 12.00 end);
+    end loop;
+  end loop;
+end $$;
+
+do $$
+declare ln bigint; before_impact numeric; after_impact numeric;
+        raw_before text; raw_after text; n int;
+begin
+  select annualized_impact into before_impact from price_flags
+   where vendor_name = 'Testfix Correct' order by period_end limit 1;
+  assert before_impact is not null, 'fixture should produce a flag to perturb';
+
+  select l.id, i.raw_input into ln, raw_before
+    from invoice_lines l join invoices i on i.id = l.invoice_id
+    join vendors v on v.id = i.vendor_id
+   where v.name = 'Testfix Correct' and i.invoice_date >= date '2025-06-01' limit 1;
+
+  -- A. correcting a QUANTITY moves the money, because impact is priced off units
+  update invoice_lines set qty = 40 where id = ln;
+  select annualized_impact into after_impact from price_flags
+   where vendor_name = 'Testfix Correct' order by period_end limit 1;
+  assert after_impact > before_impact,
+    format('more units must raise annual cost: %s -> %s', before_impact, after_impact);
+  update invoice_lines set qty = 10 where id = ln;
+
+  -- B. correcting the UNIT PRICE can retract the finding entirely. price_flags is a
+  -- view, so this needs no invalidation step -- the flag simply stops existing.
+  update invoice_lines l set unit_price = 10.00
+    from invoices i join vendors v on v.id = i.vendor_id
+   where i.id = l.invoice_id and v.name = 'Testfix Correct';
+  select count(*) into n from price_flags where vendor_name = 'Testfix Correct';
+  assert n = 0, format('correcting away the rise must clear the flag; %s remain', n);
+
+  -- C. the raw source text is never rewritten by a correction
+  select i.raw_input into raw_after from invoices i
+    join invoice_lines l on l.invoice_id = i.id where l.id = ln;
+  assert raw_after = raw_before,
+    format('raw source must be immutable: %s became %s', raw_before, raw_after);
+
+  raise notice 'corrections ok';
+end $$;
+
+-- ===========================================================================
+-- 7. INGEST FAILS CLOSED, AND LINES STAY WITH THEIR OWN INVOICE
+-- ===========================================================================
+-- The rejected record here is in the MIDDLE of the batch on purpose. Ingest used to
+-- insert invoices and lines as two set-based statements joined on row_number();
+-- deleting a row shifted the numbering on one side only, so lines silently attached
+-- to the wrong invoice. Every fixture happened to put its junk row last, which is
+-- the one position where the bug is invisible.
+
+do $$
+declare n int;
+begin
+  n := ingest_invoices('[
+    {"vendor_name":"Testfix Mid","invoice_date":"2025-01-05","confidence":"high","raw_input":"first",
+     "lines":[{"item":"alpha","qty":2,"unit_price":10.00}]},
+    {"vendor_name":"Testfix Mid","invoice_date":"2025-01-06","confidence":"high","raw_input":"BAD MIDDLE",
+     "lines":[{"item":"beta","qty":0,"unit_price":5.00}]},
+    {"vendor_name":"Testfix Mid","invoice_date":"2025-01-07","confidence":"high","raw_input":"third",
+     "lines":[{"item":"gamma","qty":3,"unit_price":7.00}]}
+  ]'::jsonb);
+
+  assert n = 2, format('2 of 3 records are valid, got %s', n);
+  assert not exists (select 1 from invoices where raw_input = 'BAD MIDDLE'),
+    'a record with any malformed line is rejected whole -- money data fails closed';
+  assert (select l.item from invoice_lines l join invoices i on i.id = l.invoice_id
+           where i.raw_input = 'first') = 'alpha',
+    'the first invoice keeps its own line';
+  assert (select l.item from invoice_lines l join invoices i on i.id = l.invoice_id
+           where i.raw_input = 'third') = 'gamma',
+    'the third invoice keeps its own line, not the first one''s';
+  assert (select amount from invoices where raw_input = 'third') = 21.00,
+    'header total is derived from the lines that survived';
+
+  raise notice 'fail-closed and line alignment ok';
+end $$;
+
+-- ===========================================================================
+-- 8. THE INVOICE TOTAL CANNOT DISAGREE WITH ITS OWN LINES
+-- ===========================================================================
+-- A rule the application is trusted to remember is not a rule. A trigger keeps
+-- amount equal to the sum of line totals, so no writer can leave the header and
+-- the detail contradicting each other.
+
+do $$
+declare inv bigint; amt numeric;
+begin
+  select id into inv from invoices where raw_input = 'first';
+
+  update invoices set amount = 999.99 where id = inv;
+  update invoice_lines set qty = qty where invoice_id = inv;   -- touch to fire it
+  select amount into amt from invoices where id = inv;
+  assert amt = 20.00, format('trigger should restore 20.00, got %s', amt);
+
+  update invoice_lines set qty = 4 where invoice_id = inv;
+  select amount into amt from invoices where id = inv;
+  assert amt = 40.00, format('4 x $10.00 should reprice to 40.00, got %s', amt);
+
+  raise notice 'amount contract ok';
+end $$;
+
 rollback;

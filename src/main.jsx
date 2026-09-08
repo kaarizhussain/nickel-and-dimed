@@ -273,7 +273,9 @@ function InvoiceRow({ inv, onSaved }) {
     }
   };
 
-  const unchanged = amount === String(inv.amount) && date === inv.invoice_date;
+  const unchanged = inv.invoice_lines?.length
+    ? date === inv.invoice_date
+    : amount === String(inv.amount) && date === inv.invoice_date;
 
   return (
     <div className={'inv' + (editing ? ' editing' : '')}>
@@ -293,10 +295,12 @@ function InvoiceRow({ inv, onSaved }) {
           <span className={'conf ' + inv.confidence}>{inv.confidence}</span>
         )}
 
-        {editing ? (
+        {editing && !inv.invoice_lines?.length ? (
           <input className="edit amt" type="number" step="0.01" min="0" value={amount}
                  onChange={(e) => setAmount(e.target.value)} />
         ) : (
+          // an itemized invoice derives its total from its lines -- correcting the
+          // total directly would contradict the detail justifying it
           <span className="inv-amt">{usd(inv.amount)}</span>
         )}
       </div>
@@ -305,12 +309,8 @@ function InvoiceRow({ inv, onSaved }) {
           just their sum. This is what detection reads. */}
       {inv.invoice_lines?.length > 0 && (
         <div className="inv-lines">
-          {inv.invoice_lines.map((l, i) => (
-            <div key={i} className="inv-line">
-              <span>{l.item}</span>
-              <span className="faint">{Number(l.qty)} &times; {money4(l.unit_price)}</span>
-              <span className="num faint">{money4(l.line_total)}</span>
-            </div>
+          {inv.invoice_lines.map((l) => (
+            <LineRow key={l.id} line={l} editing={editing} onSaved={onSaved} />
           ))}
         </div>
       )}
@@ -322,7 +322,9 @@ function InvoiceRow({ inv, onSaved }) {
       {editing ? (
         <div className="inv-actions">
           <button disabled={busy || unchanged}
-                  onClick={() => send('PATCH', { amount: Number(amount), invoice_date: date })}>
+                  onClick={() => send('PATCH', inv.invoice_lines?.length
+                    ? { invoice_date: date }
+                    : { amount: Number(amount), invoice_date: date })}>
             {busy ? 'Saving...' : 'Save'}
           </button>
           <button className="ghost" disabled={busy} onClick={() => { setEditing(false); setErr(''); }}>
@@ -337,6 +339,60 @@ function InvoiceRow({ inv, onSaved }) {
       ) : (
         <button className="ghost tiny" onClick={() => setEditing(true)}>Correct</button>
       )}
+    </div>
+  );
+}
+
+// Quantity and unit price ARE the analysis -- every finding is computed from them.
+// Correcting an invoice's date but not these two numbers left the workflow unable to
+// fix the thing most worth fixing. The invoice total follows automatically; a
+// database trigger keeps it equal to the sum of its lines.
+function LineRow({ line, editing, onSaved }) {
+  const [qty, setQty] = useState(String(line.qty));
+  const [price, setPrice] = useState(String(line.unit_price));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const unchanged = qty === String(line.qty) && price === String(line.unit_price);
+
+  const save = async () => {
+    setBusy(true); setErr('');
+    try {
+      const r = await fetch('/api/line?id=' + line.id, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ qty: Number(qty), unit_price: Number(price) }),
+      }).then((res) => res.json());
+      if (r.error) throw new Error(r.error);
+      onSaved();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  };
+
+  if (!editing) {
+    return (
+      <div className="inv-line">
+        <span>{line.item}</span>
+        <span className="faint">{Number(line.qty)} &times; {money4(line.unit_price)}</span>
+        <span className="num faint">{money4(line.line_total)}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="inv-line editing">
+      <span>{line.item}</span>
+      <span className="lineedit">
+        <input className="edit qty" type="number" step="0.001" min="0.001" value={qty}
+               onChange={(e) => setQty(e.target.value)} aria-label="quantity" />
+        <span className="faint">&times;</span>
+        <input className="edit price" type="number" step="0.0001" min="0" value={price}
+               onChange={(e) => setPrice(e.target.value)} aria-label="unit price" />
+      </span>
+      <span className="num">
+        <button className="tiny-save" disabled={busy || unchanged} onClick={save}>
+          {busy ? '...' : 'Save'}
+        </button>
+      </span>
+      {err && <span className="error small">{err}</span>}
     </div>
   );
 }

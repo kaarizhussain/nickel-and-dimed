@@ -110,11 +110,11 @@ alter table invoice_lines enable row level security;
 
 -- --------------------------------------------------------------------- ingest
 
--- One round trip: upsert vendors, insert invoices, then their lines.
+-- Upsert vendors, then insert each invoice with its own lines.
 create or replace function ingest_invoices(payload jsonb)
 returns integer
 language plpgsql as $$
-declare inserted integer;
+declare b record; inv bigint; n integer := 0;
 begin
   drop table if exists _batch;
   create temp table _batch on commit drop as
@@ -129,9 +129,23 @@ begin
       raw_input    text
     );
 
+  -- Fail closed. The header total is summed over the incoming lines, so a malformed
+  -- line that got filtered out of the detail would still inflate the total that the
+  -- detail is supposed to justify. Money data rejects the whole record instead.
+  -- Types are checked before casting, so a non-numeric qty fails the record rather
+  -- than raising.
   delete from _batch
-   where vendor_name is null or invoice_date is null
-      or (amount is null and (lines is null or jsonb_array_length(lines) = 0));
+   where vendor_name is null
+      or invoice_date is null
+      or (amount is null and (lines is null or jsonb_array_length(lines) = 0))
+      or exists (
+        select 1 from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) l
+         where jsonb_typeof(l->'item')       is distinct from 'string'
+            or jsonb_typeof(l->'qty')        is distinct from 'number'
+            or jsonb_typeof(l->'unit_price') is distinct from 'number'
+            or (l->>'qty')::numeric <= 0
+            or (l->>'unit_price')::numeric < 0
+      );
 
   insert into vendors (name, category)
   select distinct on (norm(vendor_name)) vendor_name, category
@@ -139,17 +153,22 @@ begin
    order by norm(vendor_name), length(vendor_name) desc  -- keep the fullest spelling
   on conflict (normalized_name) do nothing;
 
-  drop table if exists _new;
-  create temp table _new on commit drop as
-  with ins as (
+  -- Each invoice is inserted together with its own lines, so a line can only ever
+  -- attach to the record it came from.
+  --
+  -- This was two set-based inserts joined on row_number(). That join broke the
+  -- moment a record was rejected from anywhere but the END of the batch: the delete
+  -- shifted the numbering on one side only, and lines silently attached to the wrong
+  -- invoice or vanished. It passed every test because the one rejected row in the
+  -- fixtures happened to be last -- the single position where the bug is invisible.
+  -- A positional join across two separately-numbered sets is not a key.
+  for b in select * from _batch order by rn loop
     insert into invoices (vendor_id, amount, invoice_date, category, confidence, raw_input)
     select v.id,
            -- when lines are present the total is derived from them, so the header
-           -- figure can never silently disagree with its own detail
-           coalesce(
-             (select sum((l->>'qty')::numeric * (l->>'unit_price')::numeric)
-                from jsonb_array_elements(b.lines) l),
-             b.amount),
+           -- can never silently disagree with its own detail
+           coalesce((select sum((l->>'qty')::numeric * (l->>'unit_price')::numeric)
+                       from jsonb_array_elements(b.lines) l), b.amount),
            b.invoice_date,
            -- an off-list category would fail the check constraint and kill the whole
            -- batch; anything unrecognized lands in 'other'
@@ -157,28 +176,42 @@ begin
                 then lower(b.category) else 'other' end,
            b.confidence,
            b.raw_input
-      from _batch b
-      join vendors v on v.normalized_name = norm(b.vendor_name)
-     order by b.rn
-    returning id
-  )
-  select id, row_number() over () as rn from ins;
+      from vendors v
+     where v.normalized_name = norm(b.vendor_name)
+    returning id into inv;
 
-  insert into invoice_lines (invoice_id, item, qty, unit_price)
-  select n.id,
-         l->>'item',
-         (l->>'qty')::numeric,
-         (l->>'unit_price')::numeric
-    from _batch b
-    join _new n on n.rn = b.rn
-    cross join lateral jsonb_array_elements(coalesce(b.lines, '[]'::jsonb)) l
-   where (l->>'item') is not null
-     and (l->>'qty')::numeric > 0
-     and (l->>'unit_price')::numeric >= 0;
+    if inv is not null then
+      insert into invoice_lines (invoice_id, item, qty, unit_price)
+      select inv, l->>'item', (l->>'qty')::numeric, (l->>'unit_price')::numeric
+        from jsonb_array_elements(coalesce(b.lines, '[]'::jsonb)) l;
+      n := n + 1;
+    end if;
+  end loop;
 
-  select count(*) into inserted from _new;
-  return inserted;
+  return n;
 end $$;
+
+-- The schema says an invoice total is derived from its own lines. Nothing enforced
+-- that after ingest: a later write could set amount to anything while the lines said
+-- otherwise. A rule the application is trusted to remember is not a rule.
+create or replace function sync_invoice_amount() returns trigger
+language plpgsql as $$
+declare target bigint := coalesce(new.invoice_id, old.invoice_id);
+begin
+  update invoices i
+     set amount = coalesce((select sum(l.line_total) from invoice_lines l
+                             where l.invoice_id = target), i.amount)
+   where i.id = target;
+  return null;
+end $$;
+
+drop trigger if exists invoice_lines_sync_amount on invoice_lines;
+-- ponytail: row-level, so a bulk load fires once per line. Fine at this scale
+-- (~1,700 lines load in seconds); move to a statement-level trigger with transition
+-- tables if that stops being true.
+create trigger invoice_lines_sync_amount
+after insert or update or delete on invoice_lines
+for each row execute function sync_invoice_amount();
 
 -- ------------------------------------------------------------------ detection
 

@@ -166,6 +166,11 @@ against a database with real data in it. They cover:
 - the trailing-12-month window excludes the month sitting exactly 12 back
 - vendors without line items still produce findings, labelled `invoice_average`, capped
   at low confidence, and priced against the trailing invoice count rather than a unit count
+- a corrected quantity changes the annualized figure, and a corrected unit price retracts the flag
+- `raw_input` survives every correction untouched
+- a record with any malformed line is rejected whole, and lines stay attached to their own invoice
+  even when the rejected record sits in the middle of the batch
+- an invoice total cannot be left disagreeing with the sum of its lines
 - three spellings of one vendor collapse to a single record
 - `paper goods` and `Paper Goods` are one comparable item; invoice totals derive from their own lines
 
@@ -197,6 +202,23 @@ never editable — correcting a reading must not rewrite the evidence it is bein
 corrected against. Corrections set `corrected_at` rather than raising the
 confidence, because "the model was confident" and "a person checked this" are
 different facts and collapsing them would launder a guess into a verified figure.
+
+**Corrections reach the numbers the analysis actually uses.** Quantity and unit
+price *are* the analysis, so those are editable per line; the invoice total is not,
+because it is derived from its lines and a database trigger keeps it that way. An
+itemized invoice refuses a direct edit to its total and tells you to correct the
+lines instead. Because every flag is a view, a correction re-derives detection
+immediately — no cache, no recompute job, no stale alert.
+
+### Normalization is deliberately exact, not fuzzy
+
+`norm()` handles casing, punctuation, legal suffixes and simple plurals, so
+`ACME Supply Co.` and `Acme Supply` are one vendor. It does **not** do fuzzy
+matching automatically, because a false merge is worse than a duplicate record: two
+genuinely different vendors collapsed into one silently corrupts every price series
+they touch, while a duplicate is visible and fixable. Judgement calls about whether
+two names are the same business happen in the extraction prompt, which sees the
+existing vendor list; the database layer only catches what it can prove.
 
 ---
 

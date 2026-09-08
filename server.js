@@ -116,9 +116,10 @@ async function extract(text, vendorNames) {
   return out;
 }
 
-const invoiceId = (req) => {
+// used for both invoice and line ids
+const rowId = (req) => {
   const id = Number(new URL(req.url, 'http://localhost').searchParams.get('id'));
-  if (!Number.isInteger(id) || id <= 0) throw new Error('bad invoice id');
+  if (!Number.isInteger(id) || id <= 0) throw new Error('bad id');
   return id;
 };
 
@@ -183,7 +184,7 @@ const routes = {
       db.from('vendor_monthly').select('*').eq('vendor_id', id).order('month'),
       db.from('price_flags').select('*').eq('vendor_id', id).order('period_end', { ascending: false }),
       db.from('invoices')
-        .select('id, invoice_date, amount, category, confidence, corrected_at, raw_input, invoice_lines(item, qty, unit_price, line_total)')
+        .select('id, invoice_date, amount, category, confidence, corrected_at, raw_input, invoice_lines(id, item, qty, unit_price, line_total)')
         .eq('vendor_id', id).order('invoice_date', { ascending: false }).limit(INVOICE_PAGE),
       db.from('invoices').select('*', { count: 'exact', head: true }).eq('vendor_id', id),
     ]);
@@ -204,7 +205,7 @@ const routes = {
   // use in a money tool. Detection recomputes for free afterwards, because
   // price_flags is a view over invoices rather than a stored table.
   'PATCH /api/invoice': async (req) => {
-    const id = invoiceId(req);
+    const id = rowId(req);
     const body = JSON.parse(await readBody(req));
 
     // Deliberately not editable: raw_input, which is the record of what the model
@@ -212,6 +213,16 @@ const routes = {
     // it is being corrected against.
     const patch = {};
     if (body.amount != null) {
+      // An invoice with lines derives its total from them -- that is the data
+      // contract, and a database trigger enforces it. Accepting an amount edit here
+      // would either be silently overwritten or leave the header disagreeing with
+      // the detail that justifies it. Correct the lines instead.
+      const { count, error: cErr } = await db
+        .from('invoice_lines').select('*', { count: 'exact', head: true }).eq('invoice_id', id);
+      if (cErr) throw cErr;
+      if (count > 0) {
+        throw new Error('this invoice is itemized -- correct its line items, not the total');
+      }
       const n = Number(body.amount);
       if (!Number.isFinite(n) || n < 0) throw new Error('amount must be a number, and not negative');
       patch.amount = n;
@@ -234,9 +245,46 @@ const routes = {
     return { invoice: data };
   },
 
+  // Quantity and unit price ARE the analysis. Being able to correct an invoice's
+  // date but not the two numbers every finding is computed from left the correction
+  // workflow unable to fix the thing most worth fixing. The invoice total follows
+  // automatically -- a trigger keeps it equal to the sum of its lines.
+  'PATCH /api/line': async (req) => {
+    const id = rowId(req);
+    const body = JSON.parse(await readBody(req));
+
+    const patch = {};
+    if (body.item != null) {
+      if (typeof body.item !== 'string' || !body.item.trim()) throw new Error('item cannot be empty');
+      patch.item = body.item.trim();
+    }
+    if (body.qty != null) {
+      const n = Number(body.qty);
+      if (!Number.isFinite(n) || n <= 0) throw new Error('qty must be a positive number');
+      patch.qty = n;
+    }
+    if (body.unit_price != null) {
+      const n = Number(body.unit_price);
+      if (!Number.isFinite(n) || n < 0) throw new Error('unit price must be a number, and not negative');
+      patch.unit_price = n;
+    }
+    if (!Object.keys(patch).length) throw new Error('nothing to change');
+
+    const { data: line, error } = await db
+      .from('invoice_lines').update(patch).eq('id', id).select('invoice_id').maybeSingle();
+    if (error) throw error;
+    if (!line) throw new Error('no such line');
+
+    // the correction belongs to the invoice, so the audit mark goes there
+    const { error: mErr } = await db.from('invoices')
+      .update({ corrected_at: new Date().toISOString() }).eq('id', line.invoice_id);
+    if (mErr) throw mErr;
+    return { corrected: id, invoice_id: line.invoice_id };
+  },
+
   // For rows that are not a misreading but simply not an invoice.
   'DELETE /api/invoice': async (req) => {
-    const id = invoiceId(req);
+    const id = rowId(req);
     const { data, error } = await db.from('invoices').delete().eq('id', id).select().maybeSingle();
     if (error) throw error;
     if (!data) throw new Error('no such invoice');
