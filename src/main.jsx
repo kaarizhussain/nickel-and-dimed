@@ -529,6 +529,7 @@ function App() {
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
   const [openVendor, setOpenVendor] = useState(null);
+  const [showIngest, setShowIngest] = useState(false);
 
   const load = async () => {
     const d = await fetch('/api/dashboard').then((r) => r.json());
@@ -569,6 +570,7 @@ function App() {
         await load(); // results fill in as each batch lands
       }
       setText('');
+      setShowIngest(false);
     } catch (e) {
       setError(e.message);
     }
@@ -586,59 +588,88 @@ function App() {
   const peak = Math.max(...totals.map(([, v]) => v), 1);
 
   const annualTotal = alerts.reduce((s, a) => s + Number(a.annualized_impact), 0);
-
   const trackedVendors = new Set(monthly.map((m) => m.vendor_id)).size;
   const colors = colorMap(alerts);
+  const lastMonth = totals.length ? totals[totals.length - 1][0] : null;
+
+  const ingestPanel = (
+    <>
+      <textarea
+        rows={6}
+        value={text}
+        placeholder="Paste a spend CSV or raw invoice text..."
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div className="row">
+        <button disabled={busy || !text.trim()} onClick={() => ingest(text)}>
+          {busy ? progress || 'Reading...' : 'Analyze invoices'}
+        </button>
+        <label className="file">
+          or upload a CSV
+          <input
+            type="file"
+            accept=".csv,.txt,text/csv,text/plain"
+            disabled={busy}
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) await ingest(await f.text());
+            }}
+          />
+        </label>
+        {error && <span className="error">{error}</span>}
+      </div>
+    </>
+  );
 
   return (
     <main>
-      <div className="masthead">
-        <h1>Nickel and Dimed</h1>
-        <p>vendor spend, and who is quietly creeping up</p>
-      </div>
+      {/* Ingestion used to sit between the headline and the findings, interrupting
+          the thing the page exists to show. It is an occasional action, so it lives
+          behind a button. */}
+      <header className="topbar">
+        <div>
+          <h1>Nickel &amp; Dimed</h1>
+          <p>Vendor price intelligence</p>
+        </div>
+        <div className="topbar-right">
+          {lastMonth && (
+            <span className="faint small">
+              through {monthLabel(lastMonth)} &middot; {totals.length} months
+            </span>
+          )}
+          <button onClick={() => setShowIngest(true)}>+ Add invoices</button>
+        </div>
+      </header>
 
       {alerts.length > 0 && (
-        <section className="hero">
-          <div className="hero-num">{usd(annualTotal)}</div>
-          <div className="hero-label">
-            a year, if these increases hold
+        <section className="kpis">
+          {/* the figure the whole product exists to produce */}
+          <div className="kpi lead">
+            <div className="kpi-num">{usd(annualTotal)}</div>
+            <div className="kpi-label">a year, if these increases hold</div>
           </div>
-          <div className="hero-meta">
-            <span>{alerts.length} of {trackedVendors} vendors raising prices</span>
-            <span>{totals.length} months of history</span>
+          <div className="kpi">
+            <div className="kpi-num">{alerts.length}</div>
+            <div className="kpi-label">vendors raising prices</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-num">{trackedVendors}</div>
+            <div className="kpi-label">vendors monitored</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-num">{totals.length}</div>
+            <div className="kpi-label">months of history</div>
           </div>
         </section>
       )}
 
-      {summary && <section className="summary">{summary}</section>}
-
-      <section className="panel">
-        <textarea
-          rows={5}
-          value={text}
-          placeholder="Paste a spend CSV or raw invoice text..."
-          onChange={(e) => setText(e.target.value)}
-        />
-        <div className="row">
-          <button disabled={busy || !text.trim()} onClick={() => ingest(text)}>
-            {busy ? progress || 'Reading...' : 'Ingest'}
-          </button>
-          <label className="file">
-            Upload CSV
-            <input
-              type="file"
-              accept=".csv,.txt,text/csv,text/plain"
-              disabled={busy}
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                e.target.value = '';
-                if (f) await ingest(await f.text());
-              }}
-            />
-          </label>
-          {error && <span className="error">{error}</span>}
-        </div>
-      </section>
+      {summary && (
+        <section className="panel insight">
+          <div className="eyebrow">What changed</div>
+          <p className="insight-text">{summary}</p>
+        </section>
+      )}
 
       {items.length > 0 && (
         <section className="panel">
@@ -650,8 +681,8 @@ function App() {
         </section>
       )}
 
-      <section className="panel">
-        <div className="row spread">
+      <section>
+        <div className="row spread section-head">
           <div className="eyebrow" style={{ marginBottom: 0 }}>Flagged vendors</div>
           <button className="ghost" disabled={!alerts.length} onClick={() => exportCsv(alerts)}>
             Export CSV
@@ -659,91 +690,94 @@ function App() {
         </div>
 
         {alerts.length === 0 ? (
-          <p className="empty">Nothing over the 8% threshold. Ingest some records to start.</p>
+          <div className="panel">
+            <p className="empty">Nothing over the 8% threshold. Add some invoices to start.</p>
+          </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: 24 }}></th>
-                <th>Vendor</th>
-                <th className="num">Unit price</th>
-                <th className="num">Change</th>
-                <th className="num">YoY</th>
-                <th>Trend</th>
-                <th className="num">Annual impact</th>
-              </tr>
-            </thead>
-            <tbody>
-              {alerts.map((a) => (
-                <tr key={a.vendor_id} className="clickable"
-                    onClick={() => setOpenVendor(a.vendor_id)}
-                    title="See the invoices behind this number">
-                  <td className="rank">{a.impact_rank}</td>
-                  <td>
-                    <div className="vendor">{a.vendor_name}</div>
-                    <div className="item-line">
-                      {a.item}
-                      {a.basis === 'invoice_average' && (
-                        <span className="basis" title="This vendor does not itemize, so the comparison is invoice averages -- it cannot separate a price rise from a bigger order.">
-                          invoice avg
-                        </span>
-                      )}
-                    </div>
-                    {/* what the confidence rests on, so it is checkable rather
-                        than a label the app asks you to trust */}
-                    <div className="evidence">
-                      <span className={'conf ' + a.confidence}>{a.confidence}</span>
-                      <span className="faint small">
-                        {a.observations} observations &middot; held {a.months_held} mo
+          /* One card per finding rather than a spreadsheet row. Each answers, in
+             order: who, what moved, by how much, what it costs, how much to trust
+             it, and where the evidence is. */
+          <div className="cards">
+            {alerts.map((a) => (
+              <article
+                key={a.vendor_id}
+                className="card"
+                onClick={() => setOpenVendor(a.vendor_id)}
+                title="See the invoices behind this number"
+              >
+                <span className="card-rail" style={{ background: colors[a.vendor_id] ?? HELD }} />
+
+                <div className="card-main">
+                  <div className="card-vendor">{a.vendor_name}</div>
+                  <div className="card-item">
+                    {a.item}
+                    {a.basis === 'invoice_average' && (
+                      <span className="basis" title="This vendor does not itemize, so the comparison is invoice averages -- it cannot separate a price rise from a bigger order.">
+                        invoice avg
                       </span>
-                    </div>
-                    {/* period_end is the month the increase showed up. period_start is
-                        the start of the baseline it is measured against, which is three
-                        months earlier -- labelling that "since" reads as a much older
-                        increase than actually happened. */}
-                    <div className="faint small">since {monthLabel(a.period_end)}</div>
-                  </td>
-                  <td className="num">
-                    {money4(a.current_price)}
-                    <div className="faint small">was {money4(a.baseline_price)}</div>
-                  </td>
-                  <td className="num">
-                    {/* severity readable before the digits are */}
+                    )}
+                  </div>
+                  <div className="card-move">
+                    <span className="was">{money4(a.baseline_price)}</span>
+                    <span className="arrow">&rarr;</span>
+                    <span className="now">{money4(a.current_price)}</span>
                     <span className={'delta' + (Number(a.pct_change) >= 10 ? ' high' : '')}>
                       +{Number(a.pct_change).toFixed(1)}%
                     </span>
-                    {/* a step away from the recent baseline, or a slow ratchet the
-                        baseline would otherwise absorb -- different findings, and
-                        the row says which */}
-                    <div className={'kind ' + a.kind}>
-                      {a.kind === 'drift' ? 'drift · yoy' : 'jump'}
-                    </div>
-                  </td>
-                  <td className="num">
-                    {a.pct_change_yoy == null
-                      ? <span className="faint">&mdash;</span>
-                      : `${Number(a.pct_change_yoy) > 0 ? '+' : ''}${Number(a.pct_change_yoy).toFixed(1)}%`}
-                  </td>
-                  <td>
-                    <Spark
-                      points={items
-                        .filter((m) => m.vendor_id === a.vendor_id && m.item_key === a.item_key)
-                        .map((m) => Number(m.avg_unit_price))}
-                      color={colors[a.vendor_id]}
-                    />
-                  </td>
-                  <td className="num">
-                    <div className="impact">{usd(a.annualized_impact)}</div>
-                    <div className="faint small">
-                      {Math.round(Number(a.trailing_12mo_qty)).toLocaleString()} units/yr
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <span className={'kind ' + a.kind}>
+                      {a.kind === 'drift' ? 'drift · year over year' : 'jump'}
+                    </span>
+                  </div>
+                  <div className="card-evidence">
+                    <span className={'conf ' + a.confidence}>{a.confidence}</span>
+                    <span className="faint small">
+                      {a.observations} observations &middot; held {a.months_held} mo
+                      {a.pct_change_yoy != null && <> &middot; {Number(a.pct_change_yoy) > 0 ? '+' : ''}{Number(a.pct_change_yoy).toFixed(1)}% YoY</>}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="card-spark">
+                  <Spark
+                    points={items
+                      .filter((m) => m.vendor_id === a.vendor_id && m.item_key === a.item_key)
+                      .map((m) => Number(m.avg_unit_price))}
+                    color={colors[a.vendor_id]}
+                  />
+                  <div className="faint small">since {monthLabel(a.period_end)}</div>
+                </div>
+
+                <div className="card-impact">
+                  <div className="impact">{usd(a.annualized_impact)}</div>
+                  <div className="faint small">
+                    per year &middot; {Math.round(Number(a.trailing_12mo_qty)).toLocaleString()} units
+                  </div>
+                  <div className="card-link">View evidence &rarr;</div>
+                </div>
+              </article>
+            ))}
+          </div>
         )}
       </section>
+
+      {showIngest && (
+        <>
+          <div className="scrim" onClick={() => !busy && setShowIngest(false)} />
+          <div className="modal" role="dialog" aria-label="Add invoices">
+            <div className="drawer-head">
+              <div>
+                <div className="drawer-title">Add spending data</div>
+                <div className="faint small">
+                  A CSV export or pasted invoice text. Messy is fine.
+                </div>
+              </div>
+              <button className="ghost close" disabled={busy}
+                      onClick={() => setShowIngest(false)} aria-label="Close">✕</button>
+            </div>
+            <div className="modal-body">{ingestPanel}</div>
+          </div>
+        </>
+      )}
 
       {openVendor != null && (
         <VendorDrawer
