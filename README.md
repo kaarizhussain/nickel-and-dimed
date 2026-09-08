@@ -14,7 +14,7 @@ I ran vendor negotiations by hand for four years and cut year-over-year cost abo
    each vendor against the list already in the database, so `ACME Supply Co.` and
    `Acme Supply` land on one vendor instead of two.
 3. **Detect** — SQL finds month-over-month and year-over-year moves in each
-   vendor's average invoice, flags anything past 5%, and prices the increase out
+   vendor's average invoice, flags anything past 8% of its own trailing baseline, and
    over a year.
 4. **Display** — one page, vendors ranked by what they cost you annually, with a
    three-sentence summary at the top and a CSV export.
@@ -89,7 +89,7 @@ because the detection *is* the product:
 - Year-over-year is a **self-join on an exact 12-month offset**, not `lag(..., 12)`.
   A vendor with any gap in its history would have lag-12-*rows* silently compare
   the wrong two months.
-- `price_flags` — the 5% threshold and the annualized-impact arithmetic, in one
+- `price_flags` — the 8% threshold and the annualized-impact arithmetic, in one
   place. Annualized impact is the per-invoice increase times the vendor's actual
   trailing-12-month invoice count: "if this holds, it costs you $X a year."
 - `vendor_alerts` — `DISTINCT ON` for each vendor's most recent flag, then `RANK()`

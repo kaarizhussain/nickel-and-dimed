@@ -47,10 +47,13 @@ async function extract(text, vendorNames) {
     const chunk = i === 0 ? body.join('\n') : [header, ...body].join('\n');
 
     const res = await anthropic.messages.parse({
-      model: 'claude-opus-5',
+      // Extraction is a mechanical parse against a fixed schema, run once per 40
+      // rows -- the cheapest capable model, not the best one. Opus cost ~5x more
+      // per call for the same validated output. The summary route below stays on
+      // Opus, where the prose actually matters.
+      model: 'claude-haiku-4-5',
       max_tokens: 16000,
-      // Mechanical, high-volume route -- low effort is plenty and keeps the bill down.
-      output_config: { format: zodOutputFormat(Extraction), effort: 'low' },
+      output_config: { format: zodOutputFormat(Extraction) },
       system: [
         'You normalize messy vendor spend records into structured invoices.',
         '',
@@ -126,7 +129,7 @@ const routes = {
   'GET /api/summary': async () => {
     const { data, error } = await db.from('vendor_alerts').select('*').limit(10);
     if (error) throw error;
-    if (!data.length) return { summary: 'Nothing is over the 5% threshold yet.' };
+    if (!data.length) return { summary: 'Nothing is over the 8% threshold yet.' };
 
     const res = await anthropic.messages.create({
       model: 'claude-opus-5',

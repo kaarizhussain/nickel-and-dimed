@@ -27,8 +27,8 @@ function Spark({ points }) {
 
 function exportCsv(rows) {
   const cols = [
-    'vendor_name', 'period_start', 'period_end', 'prev_month_avg', 'current_avg',
-    'pct_change_mom', 'pct_change_yoy', 'annualized_impact',
+    'vendor_name', 'period_start', 'period_end', 'baseline_avg', 'current_avg',
+    'pct_change', 'pct_change_yoy', 'annualized_impact',
   ];
   const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n');
@@ -169,7 +169,7 @@ function App() {
         </div>
 
         {alerts.length === 0 ? (
-          <p className="muted">Nothing over the 5% threshold. Ingest some records to start.</p>
+          <p className="muted">Nothing over the 8% threshold. Ingest some records to start.</p>
         ) : (
           <table>
             <thead>
@@ -177,7 +177,7 @@ function App() {
                 <th>#</th>
                 <th>Vendor</th>
                 <th className="num">Avg invoice</th>
-                <th className="num">MoM</th>
+                <th className="num">vs 3-mo</th>
                 <th className="num">YoY</th>
                 <th>Trend</th>
                 <th className="num">Annual impact</th>
@@ -193,9 +193,9 @@ function App() {
                   </td>
                   <td className="num">
                     {usd(a.current_avg)}
-                    <div className="muted small">was {usd(a.prev_month_avg)}</div>
+                    <div className="muted small">3-mo avg {usd(a.baseline_avg)}</div>
                   </td>
-                  <td className="num up">+{Number(a.pct_change_mom).toFixed(1)}%</td>
+                  <td className="num up">+{Number(a.pct_change).toFixed(1)}%</td>
                   <td className="num">
                     {a.pct_change_yoy == null
                       ? <span className="muted">&mdash;</span>

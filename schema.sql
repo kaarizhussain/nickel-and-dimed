@@ -122,6 +122,12 @@ select m.vendor_id,
        m.invoice_count,
        m.avg_invoice,
        lag(m.avg_invoice)   over w   as prev_month_avg,
+       -- Detection compares against the THREE months before this one, not just the
+       -- last one. A single prior month is itself a noisy estimate, so comparing
+       -- one noisy number against another roughly doubles the noise in the
+       -- difference -- which is how a vendor with no trend at all produced a $301
+       -- "finding" on real data.
+       avg(m.avg_invoice)   over w3  as baseline_avg,
        y.avg_invoice                 as prev_year_avg,
        sum(m.spend)         over w12 as trailing_12mo_spend,
        sum(m.invoice_count) over w12 as trailing_12mo_invoices
@@ -131,28 +137,51 @@ select m.vendor_id,
     and y.month     = (m.month - interval '12 months')::date
 window
   w   as (partition by m.vendor_id order by m.month),
+  w3  as (partition by m.vendor_id order by m.month
+          range between interval '3 months' preceding and interval '1 month' preceding),
   w12 as (partition by m.vendor_id order by m.month
           range between interval '11 months' preceding and current row);
 
--- Every month a vendor's average invoice rose at least 5% over the prior month.
--- Annualized impact = the per-invoice increase applied to the vendor's actual
--- trailing-12-month invoice volume: "if this holds, it costs you $X a year."
--- The 5% threshold lives here and nowhere else.
+-- Every month a vendor's average invoice rose at least 8% above its own trailing
+-- three-month baseline. Annualized impact = the per-invoice increase applied to
+-- the vendor's actual trailing-12-month invoice volume: "if this holds, it costs
+-- you $X a year."
+--
+-- Both guards below were added after measuring against three years of real spend,
+-- where the original rule (5% vs the single prior month, no minimum) produced 11
+-- false positives out of 20 flags:
+--
+--   invoice_count >= 2  A month with one invoice has no average to speak of -- the
+--                       "monthly average" IS that invoice, so ordinary variation
+--                       crosses any threshold. Two vendors fired 10 times between
+--                       them on completely flat prices. A floor of 3 also works but
+--                       silently drops a real finding from any twice-monthly vendor.
+--
+--   0.08 not 0.05       Measured on real data, noise landed at 5.0-6.3% and every
+--                       genuine increase at 9.3-17.7%. The gap between them is
+--                       empty, so the threshold belongs in it. This is tuned to
+--                       these vendors' invoice volumes and variance -- re-check it
+--                       against your own before trusting it. The statistically
+--                       proper version scales the threshold by each vendor's own
+--                       standard error instead of using one fixed number.
 create or replace view price_flags as
 select vendor_id,
        vendor_name,
-       (month - interval '1 month')::date as period_start,
-       month                              as period_end,
+       (month - interval '3 months')::date as period_start,
+       month                               as period_end,
+       baseline_avg,
        prev_month_avg,
-       avg_invoice                        as current_avg,
+       avg_invoice                         as current_avg,
+       invoice_count,
        trailing_12mo_spend,
        trailing_12mo_invoices,
-       round((avg_invoice - prev_month_avg) / prev_month_avg * 100, 1)          as pct_change_mom,
+       round((avg_invoice - baseline_avg) / baseline_avg * 100, 1)              as pct_change,
        round((avg_invoice - prev_year_avg) / nullif(prev_year_avg, 0) * 100, 1) as pct_change_yoy,
-       round((avg_invoice - prev_month_avg) * trailing_12mo_invoices, 2)        as annualized_impact
+       round((avg_invoice - baseline_avg) * trailing_12mo_invoices, 2)          as annualized_impact
   from vendor_changes
- where prev_month_avg > 0
-   and (avg_invoice - prev_month_avg) / prev_month_avg >= 0.05;
+ where baseline_avg > 0
+   and invoice_count >= 2
+   and (avg_invoice - baseline_avg) / baseline_avg >= 0.08;
 
 -- What the dashboard reads: each vendor's most recent flag, ranked by annual cost.
 create or replace view vendor_alerts as

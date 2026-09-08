@@ -2,7 +2,7 @@
 --   psql "$DATABASE_URL" -f test_detection.sql
 -- or paste into the Supabase SQL editor. Rolls back -- leaves no data behind.
 --
--- Fails loudly if the detection math breaks: percent change, the 5% threshold,
+-- Fails loudly if the detection math breaks: percent change, the 8% threshold,
 -- or the trailing-12-month volume that annualized impact multiplies by.
 
 begin;
@@ -23,7 +23,7 @@ select v.id, x.amt, x.d
     ('Testfix Coffee Co.', 100.00, date '2025-01-24'),
     ('Testfix Coffee Co.', 110.00, date '2025-02-10'),
     ('Testfix Coffee Co.', 110.00, date '2025-02-24'),
-    -- 3%: under threshold, must stay quiet
+    -- 3%: under the 8% threshold, must stay quiet
     ('Testfix Napkins',    100.00, date '2025-01-10'),
     ('Testfix Napkins',    103.00, date '2025-02-10')
   ) as x(nm, amt, d) on v.name = x.nm;
@@ -41,8 +41,8 @@ begin
   -- prior-year data. That form reports a missing row when the row is right there.
   assert found,
     'a 10% jump should produce a flag';
-  assert f.pct_change_mom = 10.0,
-    format('pct_change_mom should be 10.0, got %s', f.pct_change_mom);
+  assert f.pct_change = 10.0,
+    format('pct_change should be 10.0, got %s', f.pct_change);
   -- exercises the 12-month self-join across the gap year
   assert f.pct_change_yoy = 10.0,
     format('pct_change_yoy should be 10.0, got %s', f.pct_change_yoy);
@@ -53,7 +53,7 @@ begin
   assert f.annualized_impact = 40.00,
     format('annualized_impact should be 40.00, got %s', f.annualized_impact);
   assert not exists (select 1 from price_flags where vendor_name = 'Testfix Napkins'),
-    'a 3% increase is under the 5% threshold and must not be flagged';
+    'a 3% increase is under the 8% threshold and must not be flagged';
 
   raise notice 'detection ok';
 end $$;
