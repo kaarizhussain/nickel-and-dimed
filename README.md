@@ -36,12 +36,17 @@ Create `.env` in this directory:
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 SUPABASE_URL=https://<project>.supabase.co
-SUPABASE_SERVICE_KEY=<service_role key>
+SUPABASE_SERVICE_KEY=<secret key, sb_secret_...>
 ```
 
-The service_role key stays server-side. The browser only ever talks to the Node
-API, never to Supabase directly — which is why the tables can run RLS with no
-policies at all.
+That last one is the **secret** key from Project Settings → API Keys, not the
+publishable one. The publishable key is browser-safe by design, so it cannot write
+past RLS — and reads come back as an empty result rather than an error, which
+fails quietly and looks like the app is simply empty.
+
+The secret key stays server-side. The browser only ever talks to the Node API,
+never to Supabase directly — which is why the tables can run RLS with no policies
+at all.
 
 Two terminals:
 
