@@ -1,17 +1,13 @@
-Date,Vendor,Description,Amount
-01/08/2025,ACME Supply Co.,paper goods,"$1,240.00"
-1/22/25,Acme Supply,paper goods,1240
-2025-02-06,ACME SUPPLY CO,paper goods + cups,"$1,364.00"
-02/20/2025,Acme Supply Co,paper goods,1364.00
-03/06/2025,ACME Supply Co.,paper goods + cups,"$1,502.00"
-3/20/25,Acme Supply,paper goods,1502
-01/10/2025,Bluebird Coffee Roasters,whole bean 40lb,"$688.00"
-2025-02-11,Bluebird Coffee,whole bean 40lb,$702.00
-03/11/2025,Bluebird Coffee Roasters LLC,whole bean 40lb,702
-01/15/2025,Northside Linen Service,weekly linen,410.00
-2/15/25,Northside Linen,weekly linen,$410.00
-03/15/2025,Northside Linen Service,weekly linen,"$425.50"
--- subtotal row, should be skipped --,,,"$10,637.50"
-01/19/2025,Harbor Beverage Dist.,mixers + juice,"$955.00"
-2025-02-19,Harbor Beverage Distributors,mixers + juice,955
-03/19/2025,Harbor Beverage Dist,mixers + juice + syrup,"$1,178.00"
+Date,Vendor,Item,Qty,Unit Price,Line Total
+01/08/2025,ACME Supply Co.,paper goods,10,"$12.40","$124.00"
+01/08/2025,ACME Supply Co.,cups,4,6.50,26.00
+1/22/25,Acme Supply,Paper Goods,10,12.40,124.00
+2025-02-06,ACME SUPPLY CO,paper goods,12,"$13.75","$165.00"
+2/6/25,ACME SUPPLY CO,Cups,4,6.50,26.00
+02/20/2025,Acme Supply Co,paper goods,10,13.75,137.50
+-- subtotal, not an invoice --,,,,,"$602.50"
+03/06/2025,ACME Supply Co.,paper goods,14,"$14.90","$208.60"
+3/6/25,Acme Supply,cups,5,6.50,32.50
+01/15/2025,Northside Linen Service,weekly linen service,,,410.00
+2/15/25,Northside Linen,weekly linen service,,,410.00
+03/15/2025,Northside Linen Service,weekly linen service,,,425.50
