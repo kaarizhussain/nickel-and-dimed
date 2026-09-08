@@ -295,6 +295,29 @@
       .conf.high   { background: #f4f4f5; color: var(--faint); }
       .conf.medium { background: var(--warn-bg); color: var(--warn); }
       .conf.low    { background: var(--alarm-bg); color: var(--alarm); }
+      /* A human checked this one. Distinct from "the model felt confident". */
+      .conf.corrected { background: #dcfce7; color: #15803d; cursor: help; }
+
+      /* ------------------------------------------------------- corrections */
+      .inv .tiny {
+        font-size: 11px; padding: 2px 8px; margin-top: 6px;
+        opacity: 0; transition: opacity 120ms ease;
+      }
+      .inv:hover .tiny, .inv:focus-within .tiny { opacity: 1; }
+      .inv.editing { background: #fafafa; margin: 0 -10px; padding: 10px; border-radius: 8px; }
+      .edit {
+        font: inherit; font-size: 13px;
+        border: 1px solid var(--line); border-radius: 6px;
+        padding: 4px 7px; outline: none;
+        font-variant-numeric: tabular-nums;
+      }
+      .edit:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #4f46e51a; }
+      .edit.amt { text-align: right; width: 100px; justify-self: end; }
+      .edit.date { width: 138px; }
+      .inv-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+      .inv-actions button { font-size: 12px; padding: 5px 11px; }
+      button.danger { color: var(--alarm); border-color: var(--alarm-bg); }
+      button.danger:hover:not(:disabled) { border-color: var(--alarm); }
     </style>
   </head>
   <body>

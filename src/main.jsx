@@ -230,9 +230,97 @@ function IndexChart({ monthly, alerts, colors }) {
 // vendor produced, and the invoices underneath with the exact text each was parsed
 // from. In a tool where a model read the source documents, provenance is not a
 // nice-to-have -- it is the difference between a claim and evidence.
-function VendorDrawer({ id, color, onClose }) {
+// One invoice, correctable in place. A reading you can see but not fix is not much
+// use in a money tool -- and because price_flags is a view rather than a stored
+// table, fixing one row recomputes the vendor's flags with no extra machinery.
+function InvoiceRow({ inv, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [amount, setAmount] = useState(String(inv.amount));
+  const [date, setDate] = useState(inv.invoice_date);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const send = async (method, body) => {
+    setBusy(true);
+    setErr('');
+    try {
+      const r = await fetch(`/api/invoice?id=${inv.id}`, {
+        method,
+        headers: body ? { 'content-type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      }).then((res) => res.json());
+      if (r.error) throw new Error(r.error);
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      setErr(e.message);
+      setBusy(false);
+    }
+  };
+
+  const unchanged = amount === String(inv.amount) && date === inv.invoice_date;
+
+  return (
+    <div className={'inv' + (editing ? ' editing' : '')}>
+      <div className="inv-top">
+        {editing ? (
+          <input className="edit date" type="date" value={date}
+                 onChange={(e) => setDate(e.target.value)} />
+        ) : (
+          <span className="inv-date">{inv.invoice_date}</span>
+        )}
+
+        {inv.corrected_at ? (
+          <span className="conf corrected" title={`Corrected ${new Date(inv.corrected_at).toLocaleString()}`}>
+            corrected
+          </span>
+        ) : (
+          <span className={'conf ' + inv.confidence}>{inv.confidence}</span>
+        )}
+
+        {editing ? (
+          <input className="edit amt" type="number" step="0.01" min="0" value={amount}
+                 onChange={(e) => setAmount(e.target.value)} />
+        ) : (
+          <span className="inv-amt">{usd(inv.amount)}</span>
+        )}
+      </div>
+
+      {/* what the model was actually handed. Never editable -- correcting a reading
+          must not rewrite the evidence it is being corrected against. */}
+      {inv.raw_input && <div className="inv-raw">{inv.raw_input}</div>}
+
+      {editing ? (
+        <div className="inv-actions">
+          <button disabled={busy || unchanged}
+                  onClick={() => send('PATCH', { amount: Number(amount), invoice_date: date })}>
+            {busy ? 'Saving...' : 'Save'}
+          </button>
+          <button className="ghost" disabled={busy} onClick={() => { setEditing(false); setErr(''); }}>
+            Cancel
+          </button>
+          <button className="ghost danger" disabled={busy}
+                  onClick={() => send('DELETE')}>
+            Not an invoice
+          </button>
+          {err && <span className="error small">{err}</span>}
+        </div>
+      ) : (
+        <button className="ghost tiny" onClick={() => setEditing(true)}>Correct</button>
+      )}
+    </div>
+  );
+}
+
+function VendorDrawer({ id, color, onClose, onChanged }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
+
+  const reload = () =>
+    fetch(`/api/vendor?id=${id}`)
+      .then((r) => r.json())
+      .then((d) => (d.error ? setErr(d.error) : setData(d)))
+      .catch((e) => setErr(e.message));
 
   useEffect(() => {
     let live = true;
@@ -319,16 +407,12 @@ function VendorDrawer({ id, color, onClose }) {
               )}
             </div>
             <div className="invoices">
-              {data.invoices.map((inv, i) => (
-                <div key={i} className="inv">
-                  <div className="inv-top">
-                    <span className="inv-date">{inv.invoice_date}</span>
-                    <span className={'conf ' + inv.confidence}>{inv.confidence}</span>
-                    <span className="inv-amt">{usd(inv.amount)}</span>
-                  </div>
-                  {/* what the model actually read, verbatim */}
-                  {inv.raw_input && <div className="inv-raw">{inv.raw_input}</div>}
-                </div>
+              {data.invoices.map((inv) => (
+                <InvoiceRow
+                  key={inv.id}
+                  inv={inv}
+                  onSaved={() => { reload(); onChanged?.(); }}
+                />
               ))}
             </div>
           </div>
@@ -552,6 +636,7 @@ function App() {
           id={openVendor}
           color={colors[openVendor]}
           onClose={() => setOpenVendor(null)}
+          onChanged={load}
         />
       )}
     </main>

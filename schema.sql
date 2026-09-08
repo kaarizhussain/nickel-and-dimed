@@ -41,6 +41,10 @@ create table if not exists invoices (
   line_items   jsonb,
   raw_input    text,
   confidence   text check (confidence in ('low','medium','high')),
+  -- "high confidence" is the model's own claim about its extraction. Once a person
+  -- edits a row that is a different and much stronger fact, and collapsing the two
+  -- would launder a guess into a verified figure. Null means nobody has checked it.
+  corrected_at timestamptz,
   created_at   timestamptz not null default now()
 );
 create index if not exists invoices_vendor_date on invoices (vendor_id, invoice_date);

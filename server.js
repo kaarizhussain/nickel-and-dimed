@@ -9,6 +9,12 @@ import { z } from 'zod';
 const anthropic = new Anthropic();
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
+// Mirrors the check constraint on invoices.category. One list, so the schema, the
+// correction endpoint and the database cannot drift apart.
+const CATEGORIES = [
+  'food and beverage', 'supplies', 'apparel', 'services', 'utilities', 'other',
+];
+
 // Extraction is a trust boundary: this output goes straight into money columns,
 // so the shape is validated before it reaches the database.
 const Extraction = z.object({
@@ -17,9 +23,7 @@ const Extraction = z.object({
       vendor_name: z.string(),
       amount: z.number(),
       invoice_date: z.string().describe('YYYY-MM-DD'),
-      category: z.enum([
-        'food and beverage', 'supplies', 'apparel', 'services', 'utilities', 'other',
-      ]),
+      category: z.enum(CATEGORIES),
       line_items: z.array(z.string()).describe('empty array if the record has none'),
       confidence: z.enum(['low', 'medium', 'high']),
       source_line: z.string().describe('the exact input line this came from'),
@@ -87,6 +91,12 @@ async function extract(text, vendorNames) {
   return out;
 }
 
+const invoiceId = (req) => {
+  const id = Number(new URL(req.url, 'http://localhost').searchParams.get('id'));
+  if (!Number.isInteger(id) || id <= 0) throw new Error('bad invoice id');
+  return id;
+};
+
 const readBody = (req) =>
   new Promise((resolve, reject) => {
     let s = '';
@@ -141,7 +151,7 @@ const routes = {
       db.from('vendors').select('*').eq('id', id).maybeSingle(),
       db.from('vendor_monthly').select('*').eq('vendor_id', id).order('month'),
       db.from('price_flags').select('*').eq('vendor_id', id).order('period_end', { ascending: false }),
-      db.from('invoices').select('invoice_date, amount, category, confidence, raw_input')
+      db.from('invoices').select('id, invoice_date, amount, category, confidence, corrected_at, raw_input')
         .eq('vendor_id', id).order('invoice_date', { ascending: false }).limit(INVOICE_PAGE),
       db.from('invoices').select('*', { count: 'exact', head: true }).eq('vendor_id', id),
     ]);
@@ -156,6 +166,49 @@ const routes = {
       invoiceCount: count.count,
       shown: invoices.data.length,
     };
+  },
+
+  // Being able to SEE a bad extraction without being able to fix it is not much
+  // use in a money tool. Detection recomputes for free afterwards, because
+  // price_flags is a view over invoices rather than a stored table.
+  'PATCH /api/invoice': async (req) => {
+    const id = invoiceId(req);
+    const body = JSON.parse(await readBody(req));
+
+    // Deliberately not editable: raw_input, which is the record of what the model
+    // was actually handed. Correcting a reading should never rewrite the evidence
+    // it is being corrected against.
+    const patch = {};
+    if (body.amount != null) {
+      const n = Number(body.amount);
+      if (!Number.isFinite(n) || n < 0) throw new Error('amount must be a number, and not negative');
+      patch.amount = n;
+    }
+    if (body.invoice_date != null) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(body.invoice_date)) throw new Error('date must be YYYY-MM-DD');
+      if (Number.isNaN(Date.parse(body.invoice_date))) throw new Error('not a real date');
+      patch.invoice_date = body.invoice_date;
+    }
+    if (body.category != null) {
+      if (!CATEGORIES.includes(body.category)) throw new Error('unknown category');
+      patch.category = body.category;
+    }
+    if (!Object.keys(patch).length) throw new Error('nothing to change');
+    patch.corrected_at = new Date().toISOString();
+
+    const { data, error } = await db.from('invoices').update(patch).eq('id', id).select().maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('no such invoice');
+    return { invoice: data };
+  },
+
+  // For rows that are not a misreading but simply not an invoice.
+  'DELETE /api/invoice': async (req) => {
+    const id = invoiceId(req);
+    const { data, error } = await db.from('invoices').delete().eq('id', id).select().maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('no such invoice');
+    return { deleted: id };
   },
 
   // Separate from /dashboard so the table paints immediately and the prose lands after.
