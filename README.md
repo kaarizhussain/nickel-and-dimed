@@ -201,6 +201,15 @@ against a database with real data in it. They cover:
    source text it was parsed from. Corrections are made in place; detection
    recomputes immediately.
 
+![Clicking a flagged vendor opens the evidence behind the number: 365 invoices,
+both price steps this vendor took, and the verbatim source line under each
+parsed invoice](docs/drawer.gif)
+
+Tony's Pizza is the clearest example of why the drill-down exists. The dashboard
+shows one flag — `$34 → $37` in Mar 24. The drawer shows two: the March step, and
+a `$31 → $34` step in Jul 23 before it. The vendor raised prices twice; the alert
+only reports the most recent move, because that is the one still costing money.
+
 ### Provenance and correction
 
 Every extracted invoice keeps the exact source line it came from, and that text is
