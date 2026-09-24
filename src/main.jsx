@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { splitInput } from './ingest.js';
-import { apiFetch, DEMO_MODE } from './api.js';
+import { apiFetch, DEMO_MODE, setLocalAnalysis } from './api.js';
+import TryYourData from './TryYourData.jsx';
+
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
 
 const usd = (n) =>
   Number(n).toLocaleString('en-US', {
@@ -681,6 +684,9 @@ function App() {
   const [error, setError] = useState('');
   const [openVendor, setOpenVendor] = useState(null);
   const [showIngest, setShowIngest] = useState(false);
+  const [showTry, setShowTry] = useState(false);
+  const [localMeta, setLocalMeta] = useState(null); // set while showing a visitor's own data
+  const story = DEMO_MODE && !localMeta;            // the case-study narrative is about the sample
 
   const load = async (includeSummary = true) => {
     const d = await apiFetch('/api/dashboard').then((r) => r.json());
@@ -698,6 +704,16 @@ function App() {
   };
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, []);
+
+  const showDataset = async (analysis, meta) => {
+    setLocalAnalysis(analysis);
+    setLocalMeta(meta);
+    setShowTry(false);
+    setOpenVendor(null);
+    setSummary('');
+    await load(true).catch((e) => setError(e.message));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Extraction runs ~40 rows per Claude call, so a big export takes minutes. Sent
   // as one request it outruns the browser's timeout and shows nothing until it
@@ -793,7 +809,7 @@ function App() {
             <p>Vendor price intelligence</p>
           </div>
         </div>
-        {DEMO_MODE && (
+        {story && (
           <nav className="site-nav" aria-label="Case study">
             <a href="#method">Method</a>
             <a href="#findings">Findings</a>
@@ -801,17 +817,36 @@ function App() {
           </nav>
         )}
         <div className="topbar-right">
-          {DEMO_MODE && <span className="demo-badge">Read-only demo · synthetic data</span>}
+          {story && <span className="demo-badge">Read-only demo · synthetic data</span>}
+          {localMeta && <span className="demo-badge local">Your data · analyzed in this tab</span>}
           {lastMonth && (
             <span className="faint small">
               through {monthLabel(lastMonth)} &middot; {totals.length} months
             </span>
           )}
           {!DEMO_MODE && <button onClick={() => setShowIngest(true)}>+ Add invoices</button>}
+          {DEMO_MODE && <button onClick={() => setShowTry(true)}>Try your own data</button>}
         </div>
       </header>
 
-      {DEMO_MODE && alerts.length > 0 && <StoryIntro annualTotal={annualTotal} />}
+      {localMeta && (
+        <section className="local-banner" role="status">
+          <div>
+            <strong>Showing {localMeta.fileName}</strong>
+            <span>
+              {localMeta.inserted.toLocaleString()} invoices analyzed in this tab by the same SQL
+              as the demo{localMeta.skipped ? `, ${localMeta.skipped.toLocaleString()} rows skipped` : ''}.
+              Nothing left your browser; closing the tab discards it.
+            </span>
+          </div>
+          <div className="row">
+            <button className="ghost" onClick={() => setShowTry(true)}>Analyze another file</button>
+            <button className="ghost" onClick={() => showDataset(null, null)}>Back to the demo</button>
+          </div>
+        </section>
+      )}
+
+      {story && alerts.length > 0 && <StoryIntro annualTotal={annualTotal} />}
 
       {alerts.length > 0 && (
         <section className="kpis">
@@ -842,7 +877,7 @@ function App() {
         </section>
       )}
 
-      {DEMO_MODE && <StoryMethod />}
+      {story && <StoryMethod />}
 
       {mergeCandidates.length > 0 && (
         <section className="panel insight">
@@ -851,7 +886,7 @@ function App() {
             {mergeCandidates.map((candidate) => (
               <p key={`${candidate.a_id}-${candidate.b_id}`}>
                 <strong>{candidate.a_name}</strong> and <strong>{candidate.b_name}</strong>
-                {' '}may be the same vendor — {candidate.why}, {candidate.shared_items} shared items.
+                {' '}may be the same vendor — {candidate.why}, {candidate.shared_items} shared item{Number(candidate.shared_items) === 1 ? '' : 's'}.
               </p>
             ))}
           </div>
@@ -872,7 +907,9 @@ function App() {
         <div className="row spread section-head">
           <div>
             <div className="eyebrow" style={{ marginBottom: 6 }}>The actionable output</div>
-            <h2 className="findings-title">Three increases worth a conversation</h2>
+            <h2 className="findings-title">
+              {COUNT_WORDS[alerts.length] ?? alerts.length} increase{alerts.length === 1 ? '' : 's'} worth a conversation
+            </h2>
             <p className="findings-intro">Ranked by annual impact, with the evidence one click away.</p>
           </div>
           <button className="ghost" disabled={!alerts.length} onClick={() => exportCsv(alerts)}>
@@ -882,7 +919,11 @@ function App() {
 
         {alerts.length === 0 ? (
           <div className="panel">
-            <p className="empty">Nothing over the 8% threshold. Add some invoices to start.</p>
+            <p className="empty">
+              {localMeta
+                ? 'Nothing in this file is over the 8% threshold.'
+                : 'Nothing over the 8% threshold. Add some invoices to start.'}
+            </p>
           </div>
         ) : (
           /* One card per finding rather than a spreadsheet row. Each answers, in
@@ -968,7 +1009,28 @@ function App() {
         )}
       </section>
 
-      {DEMO_MODE && <StoryProof />}
+      {story && <StoryProof />}
+
+      {story && (
+        <section className="panel try-cta">
+          <div>
+            <div className="eyebrow">Your turn</div>
+            <h2>Run it on your own invoices</h2>
+            <p>
+              Drop in a spend export and the same SQL that found these three runs on it,
+              inside your browser. Your file is never uploaded, stored, or sent to an AI.
+            </p>
+          </div>
+          <button onClick={() => setShowTry(true)}>Try your own data</button>
+        </section>
+      )}
+
+      {showTry && (
+        <TryYourData
+          onClose={() => setShowTry(false)}
+          onAnalyzed={(analysis, meta) => showDataset(analysis, { ...meta, inserted: analysis.inserted })}
+        />
+      )}
 
       {!DEMO_MODE && showIngest && (
         <>

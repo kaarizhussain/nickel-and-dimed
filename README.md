@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/kaarizhussain/nickel-and-dimed/actions/workflows/ci.yml/badge.svg)](https://github.com/kaarizhussain/nickel-and-dimed/actions/workflows/ci.yml)
 
-[**Open the live read-only demo →**](https://nickel-and-dimed.vercel.app)
+[**Open the live read-only demo →**](https://nickel-and-dimed.vercel.app) — or drop in
+your own spend CSV there. It is analyzed by the same SQL, inside your browser; the
+file is never uploaded.
 
 Hand it a messy vendor spend export. Within a minute it tells you which vendor is
 quietly raising prices on you, and what that costs over a year.
@@ -341,6 +343,36 @@ have produced confident dollar figures on noise.
 ## Setup
 
 Requirements: **Node.js 22.12+** and PostgreSQL 15+ (or a Supabase project).
+
+### Try your own data
+
+The public demo accepts a spend CSV and runs the real detection on it **in the
+visitor's browser**: `schema.sql`, unchanged, in PGlite (Postgres compiled to
+WASM). Nothing is uploaded, stored, or sent to a model, and nothing costs anything
+to serve — the engine is static files, about 5 MB, loaded only when someone
+presses Analyze.
+
+- `src/csv-input.js` reads the file: quoted fields, comma/semicolon/tab
+  delimiters, `$1,234.50` and `(12.00)`, ISO and US dates, and headers matched by
+  meaning (`Supplier`, `Unit Cost`, `Amount`) — confirmed by the visitor before
+  anything runs. A row with quantity and price is a line item; a row with only a
+  total is an un-itemized invoice, analyzed as the weaker evidence it is. Every
+  skipped row is listed with its reason.
+- `src/analysis.js` runs the schema, ingests through `ingest_invoices()` with its
+  fail-closed rules, and asks the questions `server.js` asks.
+- The seed loader and the demo snapshot use the same two modules, so
+  `test/csv-input.test.js` can check that uploading the seed file reproduces the
+  published demo exactly.
+
+What it cannot do is read *semantic* mess — pasted invoice text, scans, a column
+of free-form descriptions. That is the Claude extraction step, which needs an API
+key and so stays in the local full app.
+
+Testing it on a deliberately messy export found a real bug: `norm()` stripped `&`
+as punctuation, so `Bean & Leaf Coffee LLC` and `BEAN AND LEAF COFFEE` became two
+vendors. That split one twice-monthly price series into two once-monthly ones,
+each under the observation floor, and a 12% increase went unflagged. `&` now
+reads as `and`; both the SQL suite and the upload test cover it.
 
 To explore the read-only demo locally without credentials or a database:
 

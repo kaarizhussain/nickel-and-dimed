@@ -69,12 +69,22 @@
 -- ponytail: naive plural strip ("Express" -> "expres", "Sons" -> "son"). Harmless
 -- while applied to both sides of every comparison; it would mis-merge two vendors
 -- whose names differ only by a plural. pg_trgm similarity is the upgrade.
+-- '&' is read as 'and' before punctuation is stripped. Stripping it first made
+-- "Bean & Leaf Coffee LLC" and "BEAN AND LEAF COFFEE" two vendors, which split one
+-- twice-monthly price series into two once-monthly ones -- each under the
+-- observation floor, so a real 12% increase went undetected. That is an exact
+-- equivalence, not a fuzzy match, so it belongs here rather than in review.
+--
+-- norm() feeds stored generated columns. Changing it does not rewrite rows already
+-- stored: on an existing database, run `update vendors set name = name;` and
+-- `update invoice_lines set item = item;` after replacing it.
 create or replace function norm(t text) returns text
 language sql immutable strict as $$
   select btrim(regexp_replace(
     regexp_replace(
       regexp_replace(
-        regexp_replace(lower(t), '\y(co|inc|llc|ltd|corp|corporation|company)\y\.?', '', 'g'),
+        regexp_replace(replace(lower(t), '&', ' and '),
+                       '\y(co|inc|llc|ltd|corp|corporation|company)\y\.?', '', 'g'),
       '[^a-z0-9 ]', '', 'g'),
     '\s+', ' ', 'g'),
   's\y', '', 'g'))

@@ -232,6 +232,11 @@ begin
     'invoice total must be derived from its own line items';
   assert (select category from invoices where raw_input = 'line 3') = 'other',
     'an off-list category must fall back to other, not fail the batch';
+  -- '&' and 'and' are the same word. Stripping '&' as punctuation split one vendor
+  -- in two and hid a real increase under the observation floor.
+  assert norm('Bean & Leaf Coffee LLC') = norm('BEAN AND LEAF COFFEE'),
+    format('& must read as and: %s vs %s', norm('Bean & Leaf Coffee LLC'), norm('BEAN AND LEAF COFFEE'));
+  assert norm('Smith & Sons') = norm('smith and son'), 'ampersand plus plural must still collapse';
 
   raise notice 'ingest ok';
 end $$;
