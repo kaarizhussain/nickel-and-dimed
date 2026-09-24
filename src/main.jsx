@@ -16,6 +16,11 @@ const money4 = (n) =>
 const monthLabel = (d) =>
   new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 
+const dateLabel = (d) =>
+  new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+
 // Hue carries identity, not severity -- grey vs coloured already says whether a
 // vendor is rising, so painting all the risers the same red left three identical
 // lines and three identical tooltip swatches. Spread in hue rather than by
@@ -280,13 +285,13 @@ function InvoiceRow({ inv, onSaved, readOnly = false }) {
     : amount === String(inv.amount) && date === inv.invoice_date;
 
   return (
-    <div className={'inv' + (editing ? ' editing' : '')}>
+    <article className={'inv' + (editing ? ' editing' : '')}>
       <div className="inv-top">
         {editing ? (
           <input className="edit date" type="date" value={date}
                  onChange={(e) => setDate(e.target.value)} />
         ) : (
-          <span className="inv-date">{inv.invoice_date}</span>
+          <span className="inv-date">{dateLabel(inv.invoice_date)}</span>
         )}
 
         {inv.corrected_at ? (
@@ -311,6 +316,7 @@ function InvoiceRow({ inv, onSaved, readOnly = false }) {
           just their sum. This is what detection reads. */}
       {inv.invoice_lines?.length > 0 && (
         <div className="inv-lines">
+          <div className="inv-lines-label">Parsed line items</div>
           {inv.invoice_lines.map((l) => (
             <LineRow key={l.id} line={l} editing={editing} onSaved={onSaved} />
           ))}
@@ -319,7 +325,12 @@ function InvoiceRow({ inv, onSaved, readOnly = false }) {
 
       {/* what the model was actually handed. Never editable -- correcting a reading
           must not rewrite the evidence it is being corrected against. */}
-      {inv.raw_input && <div className="inv-raw">{inv.raw_input}</div>}
+      {inv.raw_input && (
+        <details className="inv-source">
+          <summary>View original source record</summary>
+          <div className="inv-raw">{inv.raw_input}</div>
+        </details>
+      )}
 
       {editing ? (
         <div className="inv-actions">
@@ -341,7 +352,7 @@ function InvoiceRow({ inv, onSaved, readOnly = false }) {
       ) : !readOnly ? (
         <button className="ghost tiny" onClick={() => setEditing(true)}>Correct</button>
       ) : null}
-    </div>
+    </article>
   );
 }
 
@@ -452,6 +463,16 @@ function VendorDrawer({ id, color, onClose, onChanged, readOnly = false }) {
 
         {data && (
           <div className="drawer-body">
+            {readOnly && (
+              <div className="evidence-note">
+                <span aria-hidden="true">✓</span>
+                <div>
+                  <strong>Evidence-first demo</strong>
+                  <p>Each claim stays connected to the price observations and source records behind it.</p>
+                </div>
+              </div>
+            )}
+
             <div className="statrow">
               <div><div className="stat">{data.invoiceCount}</div><div className="faint small">invoices</div></div>
               <div><div className="stat">{usd(totalSpend)}</div><div className="faint small">total spend</div></div>
@@ -461,37 +482,49 @@ function VendorDrawer({ id, color, onClose, onChanged, readOnly = false }) {
               </div>
             </div>
 
-            <div className="eyebrow">
-              Price flags{data.flags.length ? ` (${data.flags.length})` : ''}
+            <div className="evidence-section-head">
+              <div>
+                <div className="eyebrow">Why this vendor was flagged</div>
+                <h3>Detected price increases</h3>
+              </div>
+              <span className="count-pill">{data.flags.length} event{data.flags.length === 1 ? '' : 's'}</span>
             </div>
             {data.flags.length === 0 ? (
               <p className="empty small">Never crossed the threshold. This vendor held its prices.</p>
             ) : (
-              <table className="mini">
-                <tbody>
-                  {data.flags.map((f) => (
-                    <tr key={f.period_end}>
-                      <td>{monthLabel(f.period_end)}</td>
-                      <td className="num">
-                        <span className={'delta' + (Number(f.pct_change) >= 10 ? ' high' : '')}>
-                          +{Number(f.pct_change).toFixed(1)}%
-                        </span>
-                      </td>
-                      <td className="num faint">
-                        {usd(f.baseline_price)} → {usd(f.current_price)}
-                      </td>
-                      <td className="num strong">{usd(f.annualized_impact)}/yr</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="flag-events">
+                {data.flags.map((f) => (
+                  <div className="flag-event" key={f.period_end}>
+                    <div className="flag-period">
+                      <span>Detected</span>
+                      <strong>{monthLabel(f.period_end)}</strong>
+                    </div>
+                    <div className="flag-price">
+                      <span>Unit price</span>
+                      <strong>{money4(f.baseline_price)} <i>→</i> {money4(f.current_price)}</strong>
+                    </div>
+                    <div className="flag-change">
+                      <span>Increase</span>
+                      <strong>+{Number(f.pct_change).toFixed(1)}%</strong>
+                    </div>
+                    <div className="flag-cost">
+                      <span>Annual impact</span>
+                      <strong>{usd(f.annualized_impact)}</strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
 
-            <div className="eyebrow" style={{ marginTop: 26 }}>
-              Invoices
-              {data.invoiceCount > data.shown && (
-                <span className="faint"> — most recent {data.shown} of {data.invoiceCount}</span>
-              )}
+            <div className="evidence-section-head invoice-head">
+              <div>
+                <div className="eyebrow">The underlying evidence</div>
+                <h3>Recent invoices</h3>
+                {data.invoiceCount > data.shown && (
+                  <p>Showing the most recent {data.shown} of {data.invoiceCount}</p>
+                )}
+              </div>
+              <span className="count-pill">{data.shown} shown</span>
             </div>
             <div className="invoices">
               {data.invoices.map((inv) => (
