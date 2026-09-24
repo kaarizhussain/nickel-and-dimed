@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "test": "node --test && npm run build",
     "verify:demo": "npm run build:demo && node scripts/verify-demo.mjs",
-    "test:sql": "node scripts/run-sql-tests.mjs"
+    "test:sql": "node scripts/run-sql-tests.mjs",
+    "snapshot:demo": "node scripts/snapshot-demo.mjs"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -26,6 +27,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@vitejs/plugin-react": "^6.1.1",
     "vite": "^8.2.2"
   }

@@ -4,53 +4,13 @@
 // seconds for free instead of in 40 minutes for a dollar.
 //
 //   node --env-file=.env seed/load.mjs
-import fs from 'node:fs';
-import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import { seedInvoices } from './invoices.mjs';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const num = (s) => Number(String(s).replace(/["$,]/g, ''));
 
-// minimal CSV split that respects "quoted, fields"
-const cells = (line) => line.match(/("[^"]*"|[^,]*)/g).filter((_, i) => i % 2 === 0);
-
-const iso = (d) => {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
-  const [mo, da, y] = d.split('/');
-  const yyyy = y.length === 2 ? '20' + y : y;
-  return `${yyyy}-${mo.padStart(2, '0')}-${da.padStart(2, '0')}`;
-};
-
-const rows = fs.readFileSync('seed/popin-2023-2025.csv', 'utf8').trim().split('\n').slice(1);
-
-// rows sharing a vendor and a date are one invoice, same rule the extractor uses
-const byInvoice = new Map();
-for (const raw of rows) {
-  const [date, vendor, item, qty, unit] = cells(raw);
-  if (!vendor || !item || !qty) continue;          // the MONTH TOTAL junk rows
-  const key = vendor + '|' + iso(date);
-  if (!byInvoice.has(key)) {
-    byInvoice.set(key, {
-      vendor_name: vendor, invoice_date: iso(date), category: 'other',
-      confidence: 'high', raw_input: raw, amount: 0, lines: [],
-    });
-  }
-  byInvoice.get(key).lines.push({ item, qty: num(qty), unit_price: num(unit) });
-  if (!byInvoice.get(key).raw_input.split('\n').includes(raw)) {
-    byInvoice.get(key).raw_input += `\n${raw}`;
-  }
-}
-
-const all = [...byInvoice.values()];
-for (const invoice of all) {
-  invoice.source_hash = createHash('sha256')
-    .update(JSON.stringify([
-      invoice.invoice_date,
-      invoice.raw_input.replace(/\r\n/g, '\n').trim(),
-    ]))
-    .digest('hex');
-}
-console.log(`${rows.length} csv rows -> ${all.length} invoices`);
+const { rows, invoices: all } = seedInvoices();
+console.log(`${rows} csv rows -> ${all.length} invoices`);
 
 let total = 0;
 for (let i = 0; i < all.length; i += 200) {

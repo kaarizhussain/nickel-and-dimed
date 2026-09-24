@@ -10,8 +10,9 @@ quietly raising prices on you, and what that costs over a year.
 I ran vendor negotiations by hand for four years at a play space and café and cut
 year-over-year cost about 10%. This is that job, automated.
 
-> **Safe public demo:** the deployed build uses deterministic synthetic data in the
-> browser. It contains no Supabase or Anthropic credentials and removes ingestion,
+> **Safe public demo:** the deployed build serves a static snapshot of the real
+> analysis — `schema.sql` run against the seed data — so every figure on it comes
+> from the detection SQL. It contains no Supabase or Anthropic credentials and removes ingestion,
 > correction, and deletion controls. The full application remains local-only until
 > authentication and authorization are added.
 
@@ -349,7 +350,16 @@ npm run demo
 ```
 
 `npm run verify:demo` creates the same static build used in production and checks
-that the synthetic dataset is present and credential markers are absent.
+that the demo data is present and credential markers are absent.
+
+The demo's data is `src/demo-snapshot.json`, built by `npm run snapshot:demo`: it
+runs the real `schema.sql` against the seed CSV in an in-process Postgres (PGlite)
+and asks the same questions `server.js` asks, with no credentials or network.
+Rerun it after changing the schema or the seed. An earlier version modelled the
+demo's spend and price series separately from the analysis, and the vendor drawer
+showed $78,696 of spend for a vendor the analysis puts at $46,763 —
+`test/demo-data.test.js` now checks the demo's numbers agree with each other and
+with the dataset the README describes.
 
 For the full ingestion and correction workflow:
 

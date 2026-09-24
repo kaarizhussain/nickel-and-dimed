@@ -279,19 +279,33 @@ select i.vendor_id,
   join vendors v on v.id = i.vendor_id
  where not exists (select 1 from invoice_lines l where l.invoice_id = i.id);
 
+-- One display name per item for its whole history: the most common spelling,
+-- case-folded, since item_key already treats 'PARTY PIZZA' and 'party pizza' as
+-- the same item. The raw spellings stay on the invoices as evidence. This used to
+-- be min(item) per month, which picked by collation -- 'party pizza' on Supabase,
+-- 'PARTY PIZZA' under byte order -- so the label depended on the database, and
+-- could change from one month to the next.
 create or replace view item_monthly as
-select vendor_id,
-       vendor_name,
-       item_key,
-       min(item)                                 as item,
-       basis,
-       date_trunc('month', invoice_date)::date   as month,
-       round(avg(unit_price), 4)                 as avg_unit_price,
-       sum(qty)                                  as qty,
-       round(sum(unit_price * qty), 2)           as spend,
+with names as (
+  select vendor_id, item_key,
+         lower(mode() within group (order by item)) as item
+    from price_observations
+   group by vendor_id, item_key
+)
+select o.vendor_id,
+       o.vendor_name,
+       o.item_key,
+       n.item,
+       o.basis,
+       date_trunc('month', o.invoice_date)::date as month,
+       round(avg(o.unit_price), 4)               as avg_unit_price,
+       sum(o.qty)                                as qty,
+       round(sum(o.unit_price * o.qty), 2)       as spend,
        count(*)::int                             as observations
-  from price_observations
- group by vendor_id, vendor_name, item_key, basis, date_trunc('month', invoice_date);
+  from price_observations o
+  join names n using (vendor_id, item_key)
+ group by o.vendor_id, o.vendor_name, o.item_key, n.item, o.basis,
+          date_trunc('month', o.invoice_date);
 
 -- Month-over-month via lag(). Year-over-year via a self-join on an exact 12-month
 -- offset, NOT lag(..., 12): an item with any gap in its history would have
