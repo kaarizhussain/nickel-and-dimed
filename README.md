@@ -2,15 +2,18 @@
 
 [![CI](https://github.com/kaarizhussain/nickel-and-dimed/actions/workflows/ci.yml/badge.svg)](https://github.com/kaarizhussain/nickel-and-dimed/actions/workflows/ci.yml)
 
+[**Open the live read-only demo →**](https://nickel-and-dimed.vercel.app)
+
 Hand it a messy vendor spend export. Within a minute it tells you which vendor is
 quietly raising prices on you, and what that costs over a year.
 
 I ran vendor negotiations by hand for four years at a play space and café and cut
 year-over-year cost about 10%. This is that job, automated.
 
-> **Local demo:** the API holds a Supabase secret key and intentionally binds only
-> to `127.0.0.1`. It is not safe to expose publicly until authentication and
-> authorization are added.
+> **Safe public demo:** the deployed build uses deterministic synthetic data in the
+> browser. It contains no Supabase or Anthropic credentials and removes ingestion,
+> correction, and deletion controls. The full application remains local-only until
+> authentication and authorization are added.
 
 ![The dashboard: $2,190/year across three vendors, a plain-English summary, per-item
 unit-price history, and one card per finding with its evidence](docs/dashboard.png)
@@ -337,6 +340,18 @@ have produced confident dollar figures on noise.
 ## Setup
 
 Requirements: **Node.js 22.12+** and PostgreSQL 15+ (or a Supabase project).
+
+To explore the read-only demo locally without credentials or a database:
+
+```bash
+npm install
+npm run demo
+```
+
+`npm run verify:demo` creates the same static build used in production and checks
+that the synthetic dataset is present and credential markers are absent.
+
+For the full ingestion and correction workflow:
 
 ```bash
 npm install

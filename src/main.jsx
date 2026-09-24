@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { splitInput } from './ingest.js';
+import { apiFetch, DEMO_MODE } from './api.js';
 
 const usd = (n) =>
   Number(n).toLocaleString('en-US', {
@@ -249,7 +250,7 @@ function IndexChart({ items, alerts, colors }) {
 // One invoice, correctable in place. A reading you can see but not fix is not much
 // use in a money tool -- and because price_flags is a view rather than a stored
 // table, fixing one row recomputes the vendor's flags with no extra machinery.
-function InvoiceRow({ inv, onSaved }) {
+function InvoiceRow({ inv, onSaved, readOnly = false }) {
   const [editing, setEditing] = useState(false);
   const [amount, setAmount] = useState(String(inv.amount));
   const [date, setDate] = useState(inv.invoice_date);
@@ -260,7 +261,7 @@ function InvoiceRow({ inv, onSaved }) {
     setBusy(true);
     setErr('');
     try {
-      const r = await fetch(`/api/invoice?id=${inv.id}`, {
+      const r = await apiFetch(`/api/invoice?id=${inv.id}`, {
         method,
         headers: body ? { 'content-type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
@@ -337,9 +338,9 @@ function InvoiceRow({ inv, onSaved }) {
           </button>
           {err && <span className="error small">{err}</span>}
         </div>
-      ) : (
+      ) : !readOnly ? (
         <button className="ghost tiny" onClick={() => setEditing(true)}>Correct</button>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -359,7 +360,7 @@ function LineRow({ line, editing, onSaved }) {
   const save = async () => {
     setBusy(true); setErr('');
     try {
-      const r = await fetch('/api/line?id=' + line.id, {
+      const r = await apiFetch('/api/line?id=' + line.id, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ qty: Number(qty), unit_price: Number(price) }),
@@ -398,12 +399,12 @@ function LineRow({ line, editing, onSaved }) {
   );
 }
 
-function VendorDrawer({ id, color, onClose, onChanged }) {
+function VendorDrawer({ id, color, onClose, onChanged, readOnly = false }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
 
   const reload = () =>
-    fetch(`/api/vendor?id=${id}`)
+    apiFetch(`/api/vendor?id=${id}`)
       .then((r) => r.json())
       .then((d) => (d.error ? setErr(d.error) : setData(d)))
       .catch((e) => setErr(e.message));
@@ -412,7 +413,7 @@ function VendorDrawer({ id, color, onClose, onChanged }) {
     let live = true;
     setData(null);
     setErr('');
-    fetch(`/api/vendor?id=${id}`)
+    apiFetch(`/api/vendor?id=${id}`)
       .then((r) => r.json())
       .then((d) => live && (d.error ? setErr(d.error) : setData(d)))
       .catch((e) => live && setErr(e.message));
@@ -497,6 +498,7 @@ function VendorDrawer({ id, color, onClose, onChanged }) {
                 <InvoiceRow
                   key={inv.id}
                   inv={inv}
+                  readOnly={readOnly}
                   onSaved={() => { reload(); onChanged?.(); }}
                 />
               ))}
@@ -534,14 +536,14 @@ function App() {
   const [showIngest, setShowIngest] = useState(false);
 
   const load = async (includeSummary = true) => {
-    const d = await fetch('/api/dashboard').then((r) => r.json());
+    const d = await apiFetch('/api/dashboard').then((r) => r.json());
     if (d.error) throw new Error(d.error);
     setAlerts(d.alerts ?? []);
     setMonthly(d.monthly ?? []);
     setItems(d.items ?? []);
     setMergeCandidates(d.mergeCandidates ?? []);
     if (includeSummary) {
-      fetch('/api/summary')
+      apiFetch('/api/summary')
         .then((r) => r.json())
         .then((r) => (r.error ? setError(r.error) : setSummary(r.summary ?? '')))
         .catch((e) => setError(e.message));
@@ -564,7 +566,7 @@ function App() {
     try {
       for (let i = 0; i < batches.length; i++) {
         if (batches.length > 1) setProgress(`Reading ${i + 1} of ${batches.length}...`);
-        const r = await fetch('/api/ingest', {
+        const r = await apiFetch('/api/ingest', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ text: batches[i] }),
@@ -640,12 +642,13 @@ function App() {
           <p>Vendor price intelligence</p>
         </div>
         <div className="topbar-right">
+          {DEMO_MODE && <span className="demo-badge">Read-only demo · synthetic data</span>}
           {lastMonth && (
             <span className="faint small">
               through {monthLabel(lastMonth)} &middot; {totals.length} months
             </span>
           )}
-          <button onClick={() => setShowIngest(true)}>+ Add invoices</button>
+          {!DEMO_MODE && <button onClick={() => setShowIngest(true)}>+ Add invoices</button>}
         </div>
       </header>
 
@@ -797,7 +800,7 @@ function App() {
         )}
       </section>
 
-      {showIngest && (
+      {!DEMO_MODE && showIngest && (
         <>
           <div className="scrim" onClick={() => !busy && setShowIngest(false)} />
           <div className="modal" role="dialog" aria-label="Add invoices">
@@ -820,6 +823,7 @@ function App() {
         <VendorDrawer
           id={openVendor}
           color={colors[openVendor]}
+          readOnly={DEMO_MODE}
           onClose={() => setOpenVendor(null)}
           onChanged={load}
         />

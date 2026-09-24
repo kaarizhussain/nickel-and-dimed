@@ -7,9 +7,12 @@
   "scripts": {
     "api": "node --env-file=.env server.js",
     "dev": "vite",
+    "demo": "vite --mode demo",
     "build": "vite build",
+    "build:demo": "vite build --mode demo",
     "preview": "vite preview",
     "test": "node --test && npm run build",
+    "verify:demo": "npm run build:demo && node scripts/verify-demo.mjs",
     "test:sql": "node scripts/run-sql-tests.mjs"
   },
   "engines": {

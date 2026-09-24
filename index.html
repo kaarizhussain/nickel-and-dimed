@@ -52,6 +52,21 @@
       .topbar h1 { font-size: var(--t-lg); font-weight: 600; letter-spacing: -0.015em; }
       .topbar p { font-size: var(--t-base); color: var(--muted); margin-top: 2px; }
       .topbar-right { display: flex; align-items: center; gap: 14px; }
+      .demo-badge {
+        padding: 5px 9px;
+        border: 1px solid #c7d2fe;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #3730a3;
+        font-size: var(--t-xs);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+      @media (max-width: 720px) {
+        .topbar { flex-direction: column; }
+        .topbar-right { align-items: flex-start; flex-wrap: wrap; }
+      }
 
       /* --------------------------------------------------------------- kpis */
       /* The annual figure is the product. It gets its own cell, twice the type
