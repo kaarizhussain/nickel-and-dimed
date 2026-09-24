@@ -246,7 +246,7 @@ end $$;
 
 insert into vendors (name) values ('Testfix Ratchet');
 
-do $
+do $$
 declare v bigint; inv bigint; p numeric;
 begin
   select id into v from vendors where name = 'Testfix Ratchet';
@@ -263,9 +263,9 @@ begin
   update invoices i set amount = t.total
     from (select invoice_id, sum(line_total) as total from invoice_lines group by 1) t
    where t.invoice_id = i.id and i.vendor_id = v;
-end $;
+end $$;
 
-do $
+do $$
 declare f record; jumps int;
 begin
   -- the jump rule alone never fires across the whole ratchet
@@ -288,15 +288,15 @@ begin
     format('annualized_impact should be 1287.55, got %s', f.annualized_impact);
 
   raise notice 'drift ok';
-end $;
+end $$;
 
 -- A flat price must never be read as drift, however much volume moves.
-do $
+do $$
 begin
   assert not exists (
     select 1 from price_flags where vendor_name = 'Testfix Qty Decor' and kind = 'drift'),
     'a flat unit price cannot drift';
-end $;
+end $$;
 
 -- ===========================================================================
 -- 6. CORRECTIONS REACH THE ANALYSIS
@@ -467,6 +467,66 @@ begin
     'genuinely distinct vendors must not be proposed as duplicates';
 
   raise notice 'split-vendor review ok';
+end $$;
+
+-- ===========================================================================
+-- 10. RESOLVED INCREASES ARE HISTORY, NOT CURRENT ALERTS
+-- ===========================================================================
+
+insert into vendors (name) values ('Testfix Reverted');
+
+do $$
+declare v bigint; inv bigint; p numeric;
+begin
+  select id into v from vendors where name = 'Testfix Reverted';
+  for m in 0..7 loop
+    p := case when m between 3 and 5 then 12.00 else 10.00 end;
+    for k in 1..4 loop
+      insert into invoices (vendor_id, amount, invoice_date)
+      values (v, 0, date '2025-01-02' + (m || ' months')::interval + (k * 5 || ' days')::interval)
+      returning id into inv;
+      insert into invoice_lines (invoice_id, item, qty, unit_price)
+      values (inv, 'widget', 2, p);
+    end loop;
+  end loop;
+end $$;
+
+do $$
+begin
+  assert exists (select 1 from price_flags where vendor_name = 'Testfix Reverted'),
+    'the historical increase should remain available as evidence';
+  assert not exists (select 1 from active_price_flags where vendor_name = 'Testfix Reverted'),
+    'a price that returned to baseline must not remain an active alert';
+  assert not exists (select 1 from vendor_alerts where vendor_name = 'Testfix Reverted'),
+    'the dashboard must not describe a resolved increase as current';
+  raise notice 'resolved findings stay historical ok';
+end $$;
+
+-- ===========================================================================
+-- 11. RETRIES ARE IDEMPOTENT
+-- ===========================================================================
+
+do $$
+declare first_insert integer; retry_insert integer;
+begin
+  first_insert := ingest_invoices('[{
+    "vendor_name":"Testfix Idempotent","invoice_date":"2025-04-05",
+    "category":"supplies","confidence":"high","raw_input":"stable source row",
+    "source_hash":"testfix-stable-hash",
+    "lines":[{"item":"cups","qty":2,"unit_price":6.00}]
+  }]'::jsonb);
+  retry_insert := ingest_invoices('[{
+    "vendor_name":"Testfix Idempotent","invoice_date":"2025-04-05",
+    "category":"supplies","confidence":"high","raw_input":"stable source row",
+    "source_hash":"testfix-stable-hash",
+    "lines":[{"item":"cups","qty":2,"unit_price":6.00}]
+  }]'::jsonb);
+
+  assert first_insert = 1 and retry_insert = 0,
+    format('first import should insert 1 and retry 0; got %s and %s', first_insert, retry_insert);
+  assert (select count(*) from invoices where source_hash = 'testfix-stable-hash') = 1,
+    'the same source record must exist exactly once after a retry';
+  raise notice 'idempotent ingest ok';
 end $$;
 
 rollback;

@@ -1,10 +1,16 @@
 # Nickel and Dimed
 
+[![CI](https://github.com/kaarizhussain/nickel-and-dimed/actions/workflows/ci.yml/badge.svg)](https://github.com/kaarizhussain/nickel-and-dimed/actions/workflows/ci.yml)
+
 Hand it a messy vendor spend export. Within a minute it tells you which vendor is
 quietly raising prices on you, and what that costs over a year.
 
 I ran vendor negotiations by hand for four years at a play space and café and cut
 year-over-year cost about 10%. This is that job, automated.
+
+> **Local demo:** the API holds a Supabase secret key and intentionally binds only
+> to `127.0.0.1`. It is not safe to expose publicly until authentication and
+> authorization are added.
 
 ![The dashboard: $2,190/year across three vendors, a plain-English summary, per-item
 unit-price history, and one card per finding with its evidence](docs/dashboard.png)
@@ -155,8 +161,13 @@ That case is now the first assertion in the test suite.
 ## Validation
 
 ```bash
-psql "$DATABASE_URL" -f test_detection.sql
+npm test          # ingestion unit tests + production build
+npm run test:sql # apply schema + run known-answer SQL assertions
 ```
+
+CI runs both commands against PostgreSQL 17 on every push and pull request. See
+[`docs/validation.md`](docs/validation.md) for the reproducibility map behind the
+README's numerical claims.
 
 Known-answer SQL assertions, wrapped in a transaction that rolls back, so it is safe
 against a database with real data in it. They cover:
@@ -172,6 +183,8 @@ against a database with real data in it. They cover:
   at low confidence, and priced against the trailing invoice count rather than a unit count
 - a corrected quantity changes the annualized figure, and a corrected unit price retracts the flag
 - `raw_input` survives every correction untouched
+- a resolved price increase remains in history but disappears from current alerts
+- retrying the same source record inserts it exactly once
 - a record with any malformed line is rejected whole, and lines stay attached to their own invoice
   even when the rejected record sits in the middle of the batch
 - an invoice total cannot be left disagreeing with the sum of its lines
@@ -201,9 +214,23 @@ against a database with real data in it. They cover:
    source text it was parsed from. Corrections are made in place; detection
    recomputes immediately.
 
+```mermaid
+flowchart LR
+    A[CSV or invoice text] --> B[Validated Claude extraction]
+    B --> C[Idempotent Postgres ingest]
+    C --> D[Unit-price observations]
+    D --> E[Jump and drift views]
+    E --> F[Current alerts and dashboard]
+    F --> G[Evidence review and correction]
+    G --> D
+```
+
 ![Clicking a flagged vendor opens the evidence behind the number: 365 invoices,
 both price steps this vendor took, and the verbatim source line under each
 parsed invoice](docs/drawer.gif)
+
+For a reviewer-friendly path through the product, use the
+[two-minute walkthrough](docs/walkthrough.md).
 
 Tony's Pizza is the clearest example of why the drill-down exists. The dashboard
 shows one flag — `$34 → $37` in Mar 24. The drawer shows two: the March step, and
@@ -272,8 +299,10 @@ detection *is* the product.
 - year-over-year is a **self-join on an exact 12-month offset**, not `lag(..., 12)`.
   An item with any gap in its history would have lag-12-*rows* silently compare the
   wrong two months
-- `vendor_alerts` — `DISTINCT ON` twice (latest flag per item, then worst item per
-  vendor) and `RANK()` by annual cost
+- `vendor_alerts` — selects the worst active item per vendor, excluding resolved
+  increases while carrying the vendor's total active impact
+- `active_price_flags` — preserves historical findings in `price_flags` while only
+  treating an increase as current if the latest trustworthy month remains elevated
 - `norm()` backs unique indexes on both vendor and item names, so deduplication is a
   database constraint rather than application code
 
@@ -307,6 +336,8 @@ have produced confident dollar figures on noise.
 
 ## Setup
 
+Requirements: **Node.js 22.12+** and PostgreSQL 15+ (or a Supabase project).
+
 ```bash
 npm install
 psql "$DATABASE_URL" -f schema.sql     # or paste schema.sql into the Supabase SQL editor
@@ -325,6 +356,8 @@ publishable one. The publishable key is browser-safe by design, so it cannot wri
 past RLS — and reads come back empty rather than erroring, which fails quietly and
 looks like the app is simply empty. It stays server-side; the browser only ever
 talks to the Node API, which is why the tables run RLS with no policies at all.
+The API listens on loopback only; do not change that binding for deployment in lieu
+of real authentication.
 
 ```bash
 npm run api     # terminal 1

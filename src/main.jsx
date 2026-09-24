@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { splitInput } from './ingest.js';
 
 const usd = (n) =>
   Number(n).toLocaleString('en-US', {
@@ -523,6 +524,7 @@ function App() {
   const [alerts, setAlerts] = useState([]);
   const [monthly, setMonthly] = useState([]);
   const [items, setItems] = useState([]);
+  const [mergeCandidates, setMergeCandidates] = useState([]);
   const [summary, setSummary] = useState('');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -531,12 +533,19 @@ function App() {
   const [openVendor, setOpenVendor] = useState(null);
   const [showIngest, setShowIngest] = useState(false);
 
-  const load = async () => {
+  const load = async (includeSummary = true) => {
     const d = await fetch('/api/dashboard').then((r) => r.json());
+    if (d.error) throw new Error(d.error);
     setAlerts(d.alerts ?? []);
     setMonthly(d.monthly ?? []);
     setItems(d.items ?? []);
-    fetch('/api/summary').then((r) => r.json()).then((r) => setSummary(r.summary ?? ''));
+    setMergeCandidates(d.mergeCandidates ?? []);
+    if (includeSummary) {
+      fetch('/api/summary')
+        .then((r) => r.json())
+        .then((r) => (r.error ? setError(r.error) : setSummary(r.summary ?? '')))
+        .catch((e) => setError(e.message));
+    }
   };
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, []);
@@ -550,13 +559,7 @@ function App() {
     setError('');
     setSummary('');
 
-    const lines = body.trim().split(/\r?\n/).filter((l) => l.trim());
-    const [header, ...rest] = lines;
-    const batches = [];
-    for (let i = 0; i < rest.length; i += 200) {
-      batches.push([header, ...rest.slice(i, i + 200)].join('\n'));
-    }
-    if (!batches.length) batches.push(header ?? '');
+    const batches = splitInput(body, 200);
 
     try {
       for (let i = 0; i < batches.length; i++) {
@@ -567,8 +570,9 @@ function App() {
           body: JSON.stringify({ text: batches[i] }),
         }).then((res) => res.json());
         if (r.error) throw new Error(r.error);
-        await load(); // results fill in as each batch lands
+        await load(false); // results fill in without paying for prose on every batch
       }
+      await load(true);
       setText('');
       setShowIngest(false);
     } catch (e) {
@@ -587,7 +591,10 @@ function App() {
   ).sort(([a], [b]) => a.localeCompare(b));
   const peak = Math.max(...totals.map(([, v]) => v), 1);
 
-  const annualTotal = alerts.reduce((s, a) => s + Number(a.annualized_impact), 0);
+  const annualTotal = alerts.reduce(
+    (s, a) => s + Number(a.vendor_total_impact ?? a.annualized_impact),
+    0,
+  );
   const trackedVendors = new Set(monthly.map((m) => m.vendor_id)).size;
   const colors = colorMap(alerts);
   const lastMonth = totals.length ? totals[totals.length - 1][0] : null;
@@ -671,6 +678,20 @@ function App() {
         </section>
       )}
 
+      {mergeCandidates.length > 0 && (
+        <section className="panel insight">
+          <div className="eyebrow">Vendor names to review</div>
+          <div className="insight-text">
+            {mergeCandidates.map((candidate) => (
+              <p key={`${candidate.a_id}-${candidate.b_id}`}>
+                <strong>{candidate.a_name}</strong> and <strong>{candidate.b_name}</strong>
+                {' '}may be the same vendor — {candidate.why}, {candidate.shared_items} shared items.
+              </p>
+            ))}
+          </div>
+        </section>
+      )}
+
       {items.length > 0 && (
         <section className="panel">
           <div className="chart-head">
@@ -719,6 +740,11 @@ function App() {
                   <div className="card-vendor">{a.vendor_name}</div>
                   <div className="card-item">
                     {a.item}
+                    {Number(a.active_item_count) > 1 && (
+                      <span className="basis" title={`${a.active_item_count} items from this vendor currently have active increases.`}>
+                        worst of {a.active_item_count}
+                      </span>
+                    )}
                     {a.basis === 'invoice_average' && (
                       <span className="basis" title="This vendor does not itemize, so the comparison is invoice averages -- it cannot separate a price rise from a bigger order.">
                         invoice avg

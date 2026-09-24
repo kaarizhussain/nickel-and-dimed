@@ -8,7 +8,12 @@
     "api": "node --env-file=.env server.js",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test && npm run build",
+    "test:sql": "node scripts/run-sql-tests.mjs"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

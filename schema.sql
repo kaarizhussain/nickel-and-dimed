@@ -99,6 +99,9 @@ create table if not exists invoices (
   category     text not null default 'other'
     check (category in ('food and beverage','supplies','apparel','services','utilities','other')),
   raw_input    text,
+  -- Stable fingerprint of the source record. Retries are expected during long
+  -- imports; they must not double quantities and inflate annual impact.
+  source_hash  text,
   confidence   text check (confidence in ('low','medium','high')),
   -- "high confidence" is the model's own claim about its extraction. Once a person
   -- edits a row that is a different and much stronger fact, and collapsing the two
@@ -106,7 +109,10 @@ create table if not exists invoices (
   corrected_at timestamptz,
   created_at   timestamptz not null default now()
 );
+alter table invoices add column if not exists source_hash text;
 create index if not exists invoices_vendor_date on invoices (vendor_id, invoice_date);
+create unique index if not exists invoices_source_hash_key
+  on invoices (source_hash) where source_hash is not null;
 
 -- The price observations themselves. item_key is what makes two lines comparable
 -- across months; without it "3 Cheese Pizza" and "cheese pizza" are different
@@ -148,7 +154,8 @@ begin
       category     text,
       lines        jsonb,
       confidence   text,
-      raw_input    text
+      raw_input    text,
+      source_hash  text
     );
 
   -- Fail closed. The header total is summed over the incoming lines, so a malformed
@@ -185,7 +192,10 @@ begin
   -- fixtures happened to be last -- the single position where the bug is invisible.
   -- A positional join across two separately-numbered sets is not a key.
   for b in select * from _batch order by rn loop
-    insert into invoices (vendor_id, amount, invoice_date, category, confidence, raw_input)
+    inv := null;
+    insert into invoices (
+      vendor_id, amount, invoice_date, category, confidence, raw_input, source_hash
+    )
     select v.id,
            -- when lines are present the total is derived from them, so the header
            -- can never silently disagree with its own detail
@@ -197,9 +207,11 @@ begin
            case when lower(b.category) in ('food and beverage','supplies','apparel','services','utilities')
                 then lower(b.category) else 'other' end,
            b.confidence,
-           b.raw_input
+           b.raw_input,
+           b.source_hash
       from vendors v
      where v.normalized_name = norm(b.vendor_name)
+    on conflict (source_hash) where source_hash is not null do nothing
     returning id into inv;
 
     if inv is not null then
@@ -428,21 +440,59 @@ select r.vendor_id, r.vendor_name, r.item_key, r.item, r.basis, r.kind,
   join held h
     on h.vendor_id = r.vendor_id and h.item_key = r.item_key and h.period_end = r.period_end;
 
--- What the dashboard reads: each vendor's worst current problem. A vendor is
--- ranked by the item costing it the most per year, not by how many items moved.
+-- Historical flags are evidence, not necessarily current problems. Keep the latest
+-- flag for an item active only while its latest trustworthy month remains above the
+-- threshold that originally fired. A later reversion therefore clears the dashboard
+-- without deleting the historical flag from the vendor drawer.
+create or replace view active_price_flags as
+with latest_month as (
+  select distinct on (vendor_id, item_key) *
+    from item_changes
+   where observations >= 2
+   order by vendor_id, item_key, month desc
+),
+active_candidates as (
+  select f.*
+    from price_flags f
+    join latest_month m using (vendor_id, item_key)
+   where m.month >= f.period_end
+     and m.avg_unit_price >= f.baseline_price
+         * case when f.kind = 'drift' then 1.10 else 1.08 end
+)
+select distinct on (f.vendor_id, f.item_key)
+       f.vendor_id, f.vendor_name, f.item_key, f.item, f.basis, f.kind,
+       f.period_start, f.period_end, f.baseline_price, f.current_price,
+       f.observations, f.qty, f.trailing_12mo_qty, f.trailing_12mo_spend,
+       f.rising_months, f.pct_change_yoy, f.pct_change, f.annualized_impact,
+       f.months_held, f.confidence
+  from active_candidates f
+ order by f.vendor_id, f.item_key, f.period_end desc;
+
+-- What the dashboard reads: each vendor's worst CURRENT problem. The card remains
+-- item-specific, while vendor_total_impact lets the headline include every active
+-- item rather than silently dropping a vendor's second increase.
 create or replace view vendor_alerts as
-select *, rank() over (order by annualized_impact desc) as impact_rank
-  from (
-    select distinct on (vendor_id) *
-      from (
-        -- only the most recent flag per item, so a sustained increase is one
-        -- finding rather than one per month it persisted
-        select distinct on (vendor_id, item_key) *
-          from price_flags
-         order by vendor_id, item_key, period_end desc
-      ) latest_per_item
-     order by vendor_id, annualized_impact desc
-  ) worst_per_vendor
+with item_totals as (
+  select *,
+         sum(annualized_impact) over (partition by vendor_id) as vendor_total_impact,
+         count(*) over (partition by vendor_id)::int as active_item_count
+    from active_price_flags
+),
+worst_per_vendor as (
+  select distinct on (vendor_id) *
+    from item_totals
+   order by vendor_id, annualized_impact desc
+)
+select vendor_id, vendor_name, item_key, item, basis, kind,
+       period_start, period_end, baseline_price, current_price,
+       observations, qty, trailing_12mo_qty, trailing_12mo_spend,
+       rising_months, pct_change_yoy, pct_change, annualized_impact,
+       months_held, confidence,
+       -- Keep impact_rank in its original position so CREATE OR REPLACE can upgrade
+       -- an existing view; new columns are appended after the old contract.
+       rank() over (order by vendor_total_impact desc) as impact_rank,
+       vendor_total_impact, active_item_count
+  from worst_per_vendor
  order by impact_rank;
 
 -- Kept for the chart and the vendor drawer: total spend per vendor per month.
@@ -462,6 +512,7 @@ alter view price_observations set (security_invoker = on);
 alter view item_monthly       set (security_invoker = on);
 alter view item_changes       set (security_invoker = on);
 alter view price_flags        set (security_invoker = on);
+alter view active_price_flags set (security_invoker = on);
 alter view vendor_alerts      set (security_invoker = on);
 alter view vendor_monthly     set (security_invoker = on);
 

@@ -5,6 +5,7 @@
 //
 //   node --env-file=.env seed/load.mjs
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
@@ -35,9 +36,20 @@ for (const raw of rows) {
     });
   }
   byInvoice.get(key).lines.push({ item, qty: num(qty), unit_price: num(unit) });
+  if (!byInvoice.get(key).raw_input.split('\n').includes(raw)) {
+    byInvoice.get(key).raw_input += `\n${raw}`;
+  }
 }
 
 const all = [...byInvoice.values()];
+for (const invoice of all) {
+  invoice.source_hash = createHash('sha256')
+    .update(JSON.stringify([
+      invoice.invoice_date,
+      invoice.raw_input.replace(/\r\n/g, '\n').trim(),
+    ]))
+    .digest('hex');
+}
 console.log(`${rows.length} csv rows -> ${all.length} invoices`);
 
 let total = 0;
