@@ -527,7 +527,9 @@ function StoryIntro({ annualTotal }) {
     <section className="story-hero" aria-labelledby="story-title">
       <div className="story-copy">
         <div className="story-kicker">A purchasing problem hiding in plain sight</div>
-        <h2 id="story-title">Your vendors rarely announce a price increase. They just invoice you.</h2>
+        <h2 id="story-title">
+          Your vendors rarely announce a <span>price increase.</span> They just invoice you.
+        </h2>
         <p>
           Nickel &amp; Dimed turns years of messy invoice history into a ranked,
           evidence-backed answer: who raised prices, when it happened, and what it
@@ -605,7 +607,7 @@ function StoryMethod() {
 
 function StoryProof() {
   return (
-    <section className="proof" aria-labelledby="proof-title">
+    <section className="proof" id="proof" aria-labelledby="proof-title">
       <div className="proof-copy">
         <div className="story-kicker">Designed to be challenged</div>
         <h2 id="proof-title">A finding is only useful if someone can verify it.</h2>
@@ -749,10 +751,22 @@ function App() {
           the thing the page exists to show. It is an occasional action, so it lives
           behind a button. */}
       <header className="topbar">
-        <div>
-          <h1>Nickel &amp; Dimed</h1>
-          <p>Vendor price intelligence</p>
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true">
+            <i /><i /><i />
+          </span>
+          <div>
+            <h1>Nickel &amp; Dimed</h1>
+            <p>Vendor price intelligence</p>
+          </div>
         </div>
+        {DEMO_MODE && (
+          <nav className="site-nav" aria-label="Case study">
+            <a href="#method">Method</a>
+            <a href="#findings">Findings</a>
+            <a href="#proof">Proof</a>
+          </nav>
+        )}
         <div className="topbar-right">
           {DEMO_MODE && <span className="demo-badge">Read-only demo · synthetic data</span>}
           {lastMonth && (
@@ -823,7 +837,11 @@ function App() {
 
       <section id="findings">
         <div className="row spread section-head">
-          <div className="eyebrow" style={{ marginBottom: 0 }}>Flagged vendors</div>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>The actionable output</div>
+            <h2 className="findings-title">Three increases worth a conversation</h2>
+            <p className="findings-intro">Ranked by annual impact, with the evidence one click away.</p>
+          </div>
           <button className="ghost" disabled={!alerts.length} onClick={() => exportCsv(alerts)}>
             Export CSV
           </button>
@@ -838,7 +856,7 @@ function App() {
              order: who, what moved, by how much, what it costs, how much to trust
              it, and where the evidence is. */
           <div className="cards">
-            {alerts.map((a) => (
+            {alerts.map((a, index) => (
               // A div with onClick is invisible to a keyboard: the page's whole
               // focus order was two buttons, so the primary action -- opening the
               // evidence behind a finding -- could not be reached without a mouse.
@@ -856,6 +874,7 @@ function App() {
                 <span className="card-rail" style={{ background: colors[a.vendor_id] ?? HELD }} />
 
                 <div className="card-main">
+                  <div className="card-rank">Finding {String(index + 1).padStart(2, '0')}</div>
                   <div className="card-vendor">{a.vendor_name}</div>
                   <div className="card-item">
                     {a.item}
