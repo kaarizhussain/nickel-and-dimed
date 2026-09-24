@@ -522,6 +522,118 @@ function exportCsv(rows) {
   URL.revokeObjectURL(url);
 }
 
+function StoryIntro({ annualTotal }) {
+  return (
+    <section className="story-hero" aria-labelledby="story-title">
+      <div className="story-copy">
+        <div className="story-kicker">A purchasing problem hiding in plain sight</div>
+        <h2 id="story-title">Your vendors rarely announce a price increase. They just invoice you.</h2>
+        <p>
+          Nickel &amp; Dimed turns years of messy invoice history into a ranked,
+          evidence-backed answer: who raised prices, when it happened, and what it
+          will cost if nothing changes.
+        </p>
+        <div className="story-actions">
+          <a className="story-primary" href="#findings">Explore the {usd(annualTotal)} finding</a>
+          <a className="story-secondary" href="#method">See how it avoids false alarms</a>
+        </div>
+        <div className="story-origin">
+          Built from four years of negotiating vendor costs by hand at a play space and café.
+        </div>
+      </div>
+
+      <div className="trap-preview" aria-label="An invoice total can rise even when its unit price does not">
+        <div className="trap-label">The analytical trap</div>
+        <div className="trap-row alarm-row">
+          <div>
+            <span>Monthly invoice total</span>
+            <strong>$512 → $1,952</strong>
+          </div>
+          <span className="trap-change">+281%</span>
+        </div>
+        <div className="trap-divider"><span>but</span></div>
+        <div className="trap-row safe-row">
+          <div>
+            <span>Price per decor kit</span>
+            <strong>$32 → $32</strong>
+          </div>
+          <span className="trap-change">0%</span>
+        </div>
+        <p>More parties, not a price increase. The detector correctly raises no alert.</p>
+      </div>
+    </section>
+  );
+}
+
+function StoryMethod() {
+  return (
+    <section className="story-section" id="method" aria-labelledby="method-title">
+      <div className="story-section-head">
+        <div className="story-kicker">The key product decision</div>
+        <h2 id="method-title">Measure the price, not the bill.</h2>
+        <p>
+          Invoice totals move when a business buys more. This analysis follows the
+          unit price of the same item from the same vendor, then prices a sustained
+          increase against the quantity actually purchased over the last year.
+        </p>
+      </div>
+      <div className="method-steps">
+        <div className="method-step">
+          <span>01</span>
+          <strong>Normalize the mess</strong>
+          <p>Claude structures inconsistent exports while preserving every source line.</p>
+        </div>
+        <div className="method-step">
+          <span>02</span>
+          <strong>Compare like with like</strong>
+          <p>SQL tracks each item’s unit price against its own trailing baseline.</p>
+        </div>
+        <div className="method-step">
+          <span>03</span>
+          <strong>Separate jumps from drift</strong>
+          <p>Two detectors catch both sudden repricing and a slow monthly ratchet.</p>
+        </div>
+        <div className="method-step">
+          <span>04</span>
+          <strong>Show the receipts</strong>
+          <p>Every dollar estimate opens back to the observations and raw invoice text.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StoryProof() {
+  return (
+    <section className="proof" aria-labelledby="proof-title">
+      <div className="proof-copy">
+        <div className="story-kicker">Designed to be challenged</div>
+        <h2 id="proof-title">A finding is only useful if someone can verify it.</h2>
+        <p>
+          The demo is a synthetic reconstruction, but the evidence chain is real:
+          a claim, its confidence, the observations behind it, and the exact source
+          text are kept together. Open any vendor above to follow that chain.
+        </p>
+        <a href="https://github.com/kaarizhussain/nickel-and-dimed" target="_blank" rel="noreferrer">
+          Read the methodology, validation, and source code →
+        </a>
+      </div>
+      <div className="proof-grid">
+        <div><strong>1,193</strong><span>synthetic invoices</span></div>
+        <div><strong>1,692</strong><span>line items</span></div>
+        <div><strong>36</strong><span>months of history</span></div>
+        <div><strong>3</strong><span>confidence signals shown</span></div>
+      </div>
+      <div className="proof-cases">
+        <span>✓ Quantity growth does not trigger</span>
+        <span>✓ Slow 2% monthly drift is caught</span>
+        <span>✓ Corrections retract stale findings</span>
+        <span>✓ Duplicate imports remain idempotent</span>
+      </div>
+    </section>
+  );
+}
+
 function App() {
   const [alerts, setAlerts] = useState([]);
   const [monthly, setMonthly] = useState([]);
@@ -652,6 +764,8 @@ function App() {
         </div>
       </header>
 
+      {DEMO_MODE && alerts.length > 0 && <StoryIntro annualTotal={annualTotal} />}
+
       {alerts.length > 0 && (
         <section className="kpis">
           {/* the figure the whole product exists to produce */}
@@ -681,6 +795,8 @@ function App() {
         </section>
       )}
 
+      {DEMO_MODE && <StoryMethod />}
+
       {mergeCandidates.length > 0 && (
         <section className="panel insight">
           <div className="eyebrow">Vendor names to review</div>
@@ -705,7 +821,7 @@ function App() {
         </section>
       )}
 
-      <section>
+      <section id="findings">
         <div className="row spread section-head">
           <div className="eyebrow" style={{ marginBottom: 0 }}>Flagged vendors</div>
           <button className="ghost" disabled={!alerts.length} onClick={() => exportCsv(alerts)}>
@@ -799,6 +915,8 @@ function App() {
           </div>
         )}
       </section>
+
+      {DEMO_MODE && <StoryProof />}
 
       {!DEMO_MODE && showIngest && (
         <>

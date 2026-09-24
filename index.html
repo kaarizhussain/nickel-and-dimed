@@ -68,6 +68,139 @@
         .topbar-right { align-items: flex-start; flex-wrap: wrap; }
       }
 
+      /* ------------------------------------------------------- case study */
+      .story-hero {
+        display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(310px, 0.8fr);
+        gap: 56px; align-items: center;
+        padding: 54px 0 64px;
+      }
+      .story-kicker {
+        color: var(--accent); font-size: var(--t-xs); font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 14px;
+      }
+      .story-copy h2 {
+        max-width: 720px; font-size: clamp(38px, 5.4vw, 62px); line-height: 1.02;
+        letter-spacing: -0.045em; font-weight: 650;
+      }
+      .story-copy > p {
+        max-width: 620px; margin-top: 22px; color: var(--ink-soft);
+        font-size: 18px; line-height: 1.65;
+      }
+      .story-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 28px; }
+      .story-actions a {
+        display: inline-flex; align-items: center; min-height: 42px;
+        padding: 9px 16px; border-radius: 7px; font-weight: 600;
+        text-decoration: none;
+      }
+      .story-primary { color: #fff; background: var(--accent); border: 1px solid var(--accent); }
+      .story-secondary { color: var(--ink-soft); background: var(--card); border: 1px solid var(--line); }
+      .story-actions a:focus-visible, .proof a:focus-visible {
+        outline: 2px solid var(--accent); outline-offset: 3px;
+      }
+      .story-origin {
+        max-width: 560px; margin-top: 20px; padding-left: 14px;
+        border-left: 2px solid var(--line); color: var(--muted); font-size: var(--t-sm);
+      }
+      .trap-preview {
+        position: relative; padding: 22px;
+        background: #18181b; color: #fff; border-radius: 14px;
+        box-shadow: 0 20px 50px rgba(24, 24, 27, 0.14);
+        transform: rotate(1deg);
+      }
+      .trap-label {
+        color: #a1a1aa; font-size: var(--t-xs); font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 14px;
+      }
+      .trap-row {
+        display: flex; justify-content: space-between; align-items: center; gap: 18px;
+        padding: 14px; border-radius: 9px;
+      }
+      .trap-row div { display: flex; flex-direction: column; gap: 2px; }
+      .trap-row div span { color: #a1a1aa; font-size: var(--t-sm); }
+      .trap-row strong { font-size: var(--t-lg); font-variant-numeric: tabular-nums; }
+      .trap-change {
+        padding: 3px 8px; border-radius: 5px; font-size: var(--t-sm); font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .alarm-row { background: #3f1d23; }
+      .alarm-row .trap-change { color: #fecaca; background: #7f1d1d; }
+      .safe-row { background: #123229; }
+      .safe-row .trap-change { color: #bbf7d0; background: #166534; }
+      .trap-divider {
+        position: relative; height: 25px; border-left: 1px dashed #52525b; margin-left: 28px;
+      }
+      .trap-divider span {
+        position: absolute; left: -11px; top: 4px; padding: 0 4px;
+        background: #18181b; color: #a1a1aa; font-size: var(--t-xs); text-transform: uppercase;
+      }
+      .trap-preview > p { margin-top: 15px; color: #d4d4d8; font-size: var(--t-sm); line-height: 1.55; }
+
+      .story-section {
+        margin: 56px 0 28px; padding: 36px;
+        border: 1px solid var(--line); border-radius: 14px; background: var(--card);
+      }
+      .story-section-head { display: grid; grid-template-columns: 210px 1fr; gap: 2px 36px; }
+      .story-section-head .story-kicker { grid-row: 1 / span 2; }
+      .story-section-head h2, .proof-copy h2 {
+        font-size: 30px; line-height: 1.15; letter-spacing: -0.025em; font-weight: 650;
+      }
+      .story-section-head > p, .proof-copy > p {
+        max-width: 670px; margin-top: 12px; color: var(--ink-soft); font-size: var(--t-md); line-height: 1.7;
+      }
+      .method-steps {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+        margin-top: 34px; background: var(--line); border: 1px solid var(--line);
+        border-radius: 10px; overflow: hidden;
+      }
+      .method-step { min-height: 190px; padding: 20px; background: #fafafa; }
+      .method-step > span {
+        display: block; color: var(--accent); font-size: var(--t-xs);
+        font-weight: 700; letter-spacing: 0.08em; margin-bottom: 32px;
+      }
+      .method-step strong { display: block; font-size: var(--t-base); margin-bottom: 8px; }
+      .method-step p { color: var(--muted); font-size: var(--t-sm); line-height: 1.6; }
+
+      .proof {
+        display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 44px;
+        margin-top: 64px; padding: 42px;
+        color: #fff; background: #18181b; border-radius: 14px;
+      }
+      .proof .story-kicker { color: #a5b4fc; }
+      .proof-copy > p { color: #d4d4d8; }
+      .proof-copy a {
+        display: inline-block; margin-top: 20px; color: #c7d2fe;
+        font-weight: 600; text-underline-offset: 4px;
+      }
+      .proof-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+        align-self: start; background: #3f3f46; border: 1px solid #3f3f46;
+        border-radius: 10px; overflow: hidden;
+      }
+      .proof-grid div { display: flex; flex-direction: column; padding: 18px; background: #27272a; }
+      .proof-grid strong { font-size: 27px; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+      .proof-grid span { color: #a1a1aa; font-size: var(--t-sm); margin-top: 3px; }
+      .proof-cases {
+        grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr;
+        gap: 8px 24px; padding-top: 22px; border-top: 1px solid #3f3f46;
+        color: #d4d4d8; font-size: var(--t-sm);
+      }
+      .proof-cases span::first-letter { color: #86efac; }
+
+      @media (max-width: 860px) {
+        .story-hero { grid-template-columns: 1fr; gap: 38px; padding-top: 36px; }
+        .trap-preview { max-width: 560px; transform: none; }
+        .method-steps { grid-template-columns: 1fr 1fr; }
+        .proof { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 620px) {
+        .story-copy h2 { font-size: 40px; }
+        .story-section { padding: 24px 20px; }
+        .story-section-head { grid-template-columns: 1fr; }
+        .story-section-head .story-kicker { grid-row: auto; }
+        .method-steps, .proof-grid, .proof-cases { grid-template-columns: 1fr; }
+        .proof { padding: 28px 22px; }
+      }
+
       /* --------------------------------------------------------------- kpis */
       /* The annual figure is the product. It gets its own cell, twice the type
          size of the others, and the first position. */
